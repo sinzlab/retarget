@@ -1,0 +1,9 @@
+/.DS_Store
+/.idea
+/.vagrant
+/.venv
+/Vagrantfile
+/data
+/notebooks
+/singularity.sh
+/vm-singularity

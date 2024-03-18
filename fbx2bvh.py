@@ -36,5 +36,4 @@ if __name__ == '__main__':
       Path(path.join(bvh_path,d)).mkdir(exist_ok=True)
       files = sorted([f for f in listdir(fbx_path+d) if f.endswith(".fbx")])
       for file in files:
-        # print(path.join(fbx_path,d), path.join(bvh_path,d), file)
           fbx2bvh(path.join(fbx_path,d), path.join(bvh_path,d), file)

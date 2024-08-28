@@ -1,5 +1,5 @@
 numpy
 matplotlib
 torch
-bpy
 torch-geometric
+wandb

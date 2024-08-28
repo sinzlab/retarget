@@ -19,5 +19,5 @@ export VM=sylabs/singularity-3.0-ubuntu-bionic64 && \
 
 Once you are in the VM navigate to `/vagrant` and run
 ```
-sudo singularity build container.sif singularity.def
+singularity build --fakeroot container.sif singularity.def
 ```

@@ -1,0 +1,29 @@
+version: '3.4'
+x-build: &build
+  context: .
+  dockerfile: Dockerfile
+
+x-shared: &common
+  build:
+    context: .
+    dockerfile: Dockerfile
+  volumes:
+    - .:/src
+    - ./lib:/src/lib
+
+services:
+  base:
+    image: retarget
+    <<: *common
+    volumes:
+      - .:/src
+      - ./lib:/src/lib
+
+  python:
+    &python
+    image: retarget
+    volumes:
+      - .:/src
+    entrypoint: [ "python" ]
+    env_file:
+      - .env

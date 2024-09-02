@@ -366,6 +366,9 @@ class Quaternions:
 
         return angles, axis
 
+    def conjugate(self):
+        return Quaternions(self.qs * np.array([[1, -1, -1, -1]]))
+
     def transforms(self):
 
         qw = self.qs[..., 0]
@@ -501,14 +504,17 @@ class Quaternions:
         )
 
     @classmethod
-    def between(cls, v0s, v1s):
+    def between(cls, v0s, v1s, normalized=True):
         a = np.cross(v0s, v1s)
         w = np.sqrt((v0s**2).sum(axis=-1) * (v1s**2).sum(axis=-1)) + (
             v0s * v1s
         ).sum(axis=-1)
-        return Quaternions(
-            np.concatenate([w[..., np.newaxis], a], axis=-1)
-        ).normalized()
+        if normalized:
+            return Quaternions(
+                np.concatenate([w[..., np.newaxis], a], axis=-1)
+            ).normalized()
+        else:
+            return Quaternions(np.concatenate([w[..., np.newaxis], a], axis=-1))
 
     @classmethod
     def from_angle_axis(cls, angles, axis):

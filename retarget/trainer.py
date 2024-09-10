@@ -75,8 +75,7 @@ def trainer(
                 batch.x, batch.pos, batch.edge_index, mask=mask
             )
 
-            rotmat = d6_2_rotmat(y_pred)
-            fk_pose, edge_indexs = fk_for_batch(batch, rotmat, quater=False)
+            fk_pose, edge_indexs = fk_for_batch(batch, y_pred, quater=False, rotations_fmt='d6')
             fk_pose = fk_pose - fk_pose[..., 0:1, :]
 
             # create a boolean mask for the childen of the root (idx 0)
@@ -131,16 +130,13 @@ def trainer(
                     mask=mask.to(device),
                 )
 
-                rotmat = d6_2_rotmat(y_pred)
-                fk_pose, edge_indexs = fk_for_batch(batch, rotmat, quater=False)
+                fk_pose, edge_indexs = fk_for_batch(batch, y_pred, quater=False, rotations_fmt='d6')
                 fk_pose = fk_pose - fk_pose[..., 0:1, :]
 
                 val_loss = (
                     torch.norm(position - fk_pose, dim=-1) * mask
                 ).sum() / mask.sum()
 
-                # val_loss = (torch.norm(y_true[..., -3:] - y_pred[..., -3:], dim=-1) * mask).mean()
-                # val_loss = val_loss.mean()
                 val_losses.append(val_loss.item())
 
         if np.mean(val_losses) < prev_best_val_loss:

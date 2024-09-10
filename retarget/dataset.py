@@ -50,32 +50,7 @@ class MixamoDataset(Dataset):
 
         self.data = []
         for animation in self.animations:
-            for position, rotation in zip(
-                animation.positions[::stride], animation.rotations[::stride]
-            ):
-                d6 = quat_2_d6(rotation)
-
-                position = torch.Tensor(position)
-                position = position - position[0]
-                features = torch.cat([torch.Tensor(d6), position], dim=-1)
-                edges = torch.LongTensor(animation.edges.T)
-                t_pose = torch.Tensor(animation.t_pose)
-                offsets = torch.Tensor(animation.offsets)
-                parents = torch.LongTensor(animation.parents)
-                rotation = torch.Tensor(rotation)
-
-                self.data.append(
-                    Data(
-                        features,
-                        edges,
-                        d6=torch.Tensor(d6),
-                        rotation=rotation,
-                        position=position,
-                        pos=t_pose,
-                        offsets=offsets,
-                        parents=parents,
-                    )
-                )
+            self.data = self.data + animation.as_graph()
 
         print("=== Mixamo Dataset Summary ===")
         print(

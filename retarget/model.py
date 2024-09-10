@@ -1,12 +1,11 @@
 import os
 
-import matplotlib.pyplot as plt
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 
 try:
-    from torch_geometric.nn import GATConv, GCNConv, GraphSAGE
+    from torch_geometric.nn import GraphSAGE
+    from torch_geometric.data import Batch, Data
 except ImportError:
     import warnings
 
@@ -18,6 +17,7 @@ except ImportError:
         [sys.executable, "-m", "pip", "install", "torch-geometric==2.5.1"]
     )
     from torch_geometric.nn import GraphSAGE
+    from torch_geometric.data import Batch, Data
 
 
 class PositionalEncoding(nn.Module):
@@ -167,9 +167,6 @@ def graph_to_batch(x, mask, pad_with=0):
     return padded_tensor
 
 
-from torch_geometric.data import Batch, Data
-
-
 def batch_to_graph(x, mask):
     """
     Converts the batched zero-padded tokens to graphs
@@ -185,7 +182,12 @@ def batch_to_graph(x, mask):
     )
 
 
-def mask_from_batch(batch):
+def mask_from_batch(batch: Batch) -> torch.Tensor:
+    """
+    Creates a mask from the batch. The mask is True for the actual tokens and False for the padding.
+    :param batch: Batch object
+    :return: mask
+    """
     _, counts = batch.batch.unique(return_counts=True)
     indices = torch.arange(max(counts), device=batch.batch.device)
     mask = indices < counts.unsqueeze(1)

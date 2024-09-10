@@ -4,7 +4,7 @@ import numpy as np
 
 import retarget.utils.AnimationStructure as AnimationStructure
 from retarget.model import graph_to_batch, mask_from_batch
-from retarget.utils.Quaternions_old import Quaternions
+from retarget.utils.Quaternions_old import Quaternions, d6_2_rotmat
 
 
 class Animation:
@@ -181,6 +181,68 @@ class Animation:
             offsets,
             parents.copy(),
         )
+    
+    def as_graph(self, stride=1):
+        """
+        Convert Animation to Graph Data.
+
+        Such that you can run
+        
+        ```python
+        animation, _, _ = load('motion.bvh')
+        graph = animation.as_graph()
+        ```
+
+        Parameters
+        ----------
+        animation : Animation
+            Input animation
+
+        stride : int
+            Stride to sample the animation
+
+        Returns
+        -------
+        data : [Data]
+            List of Graph Data objects
+
+        """
+        from torch_geometric.data import Data
+        from retarget.utils.Quaternions_old import quat_2_d6
+
+        data = []
+        for position, rotation in zip(
+                self.positions[::stride], self.rotations[::stride]
+            ):
+                d6 = quat_2_d6(rotation)
+
+                position = torch.Tensor(position)
+                position = position - position[0]
+
+                rotation = torch.Tensor(rotation)
+                d6 = torch.Tensor(d6)
+
+                t_pose = torch.Tensor(self.t_pose)
+                offsets = torch.Tensor(self.offsets)
+                parents = torch.LongTensor(self.parents)
+                edges = torch.LongTensor(self.edges.T)
+
+                features = torch.cat([d6, position], dim=-1)
+
+                data.append(
+                    Data(
+                        features,
+                        edges,
+                        rotation=rotation,
+                        position=position,
+                        d6=d6,
+                        pos=t_pose,
+                        offsets=offsets,
+                        parents=parents,
+                    )
+                )
+
+        return data
 
 
 """ Maya Interaction """
@@ -766,7 +828,10 @@ def forward_rotations_torch_batch(
     return result
 
 
-def fk_for_batch(batch, replace_rotations=None, quater=True, device="cuda"):
+def fk_for_batch(batch, replace_rotations=None, quater=True, device="cuda", rotations_fmt='rotmat'):
+    if rotations_fmt == 'd6':
+        replace_rotations = d6_2_rotmat(replace_rotations)
+
     mask = mask_from_batch(batch)
     offsets = graph_to_batch(batch.offsets, mask, pad_with=0)
     rotations_poses = graph_to_batch(batch.x, mask, pad_with=1)

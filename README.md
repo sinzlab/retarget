@@ -1,4 +1,4 @@
-# Topology Agnostic Skeleton Embedding (TASE) 🔫
+# Skeleton Invariant Pose Embedding (SkIP) 🤸
 The first step is to obtain a latent embedding that can abstract away the topology of the skeleton. To achieve this we need to be able to encode and decode the pose into a shared latent space regardless of the topology of skeleton for these keypoints. This is a graph embedding problem. We need an Encoder $\mathcal{E}(X, E) \rightarrow z$ where $X$ are the features of the keypoint, $E$ are the edges in the graph and $z \in \mathbb{R}^N$ is the latent vector. We also need a Decoder $\mathcal{D}(z, E) \rightarrow X$ which given the graph topology can reconstruct the original pose X. This as a result, will allow training the diffusion model on any topology and generate from any topology.
 
 ## Getting Started

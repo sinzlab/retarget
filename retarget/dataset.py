@@ -37,7 +37,11 @@ class MixamoDataset(Dataset):
 
             for action in actions:
                 try:
-                    animations[character.name][action.name], _, (frame_times[character.name][action.name],_,_) = load(action)
+                    (
+                        animations[character.name][action.name],
+                        _,
+                        (frame_times[character.name][action.name], _, _),
+                    ) = load(action)
                 except Exception as e:
                     print(f"Error loading {character.name}/{action.name}: {e}")
 
@@ -53,31 +57,30 @@ class MixamoDataset(Dataset):
         self.frame_time = [
             frame_time for character in self.frame_times for frame_time in character
         ]
-        #Create Empty list to fill with frames as graph
+        # Create Empty list to fill with frames as graph
         self.data = []
 
-        #Initialize empty list to put in the previous frames of a given frame
-        #This is used for the velocity loss
-        #Also Initialize empty list with frame times between frames
+        # Initialize empty list to put in the previous frames of a given frame
+        # This is used for the velocity loss
+        # Also Initialize empty list with frame times between frames
         if mode == "train":
             self.data_prev = []
             self.time = []
 
-        for animation,time in zip(self.animations,self.frame_time):
+        for animation, time in zip(self.animations, self.frame_time):
             animation_graphs = animation.as_graph()
             n_graphs = len(animation_graphs)
-            
+
             self.data = self.data + animation_graphs
             if mode == "train":
                 self.time = self.time + [time] * n_graphs
 
-                
                 for i in range(n_graphs):
                     if i == 0:
                         self.data_prev.append(animation_graphs[i].clone())
                     else:
-                        self.data_prev.append(animation_graphs[i-1].clone())
-                        
+                        self.data_prev.append(animation_graphs[i - 1].clone())
+
         print("=== Mixamo Dataset Summary ===")
         print(
             f"Loaded {len(self.animations)} animation clips for {len(animations)} characters"
@@ -97,13 +100,13 @@ class MixamoDataset(Dataset):
 
         if self.mode == "train":
 
-            #If the mode is "train", then also define the frame time
+            # If the mode is "train", then also define the frame time
             frame_time = self.time[idx]
-            
-            #If the mode is "train", then also define the previous frame
+
+            # If the mode is "train", then also define the previous frame
             item_prev = self.data_prev[idx]
 
-            #Offsets from previous frame and current frame is the same (From same Animation)
+            # Offsets from previous frame and current frame is the same (From same Animation)
             scaled_offsets = item.offsets.numpy().copy()
             if np.random.rand() < 0.5:
                 scaled_offsets = scaled_offsets * np.random.uniform(
@@ -116,7 +119,7 @@ class MixamoDataset(Dataset):
             if np.random.rand() < 0.25:
                 scaled_offsets = scaled_offsets * np.random.uniform(0.5, 1.5)
 
-            #For original frame
+            # For original frame
             parents = item.parents.numpy()
             rotation = item.rotation.numpy()
             edges = item.edge_index.numpy().T
@@ -131,12 +134,12 @@ class MixamoDataset(Dataset):
             item.offsets = torch.Tensor(scaled_offsets)
             item.t_pose = torch.Tensor(t_pose)
 
-            #For previous frame
+            # For previous frame
             parents_prev = item_prev.parents.numpy()
             rotation_prev = item_prev.rotation.numpy()
             edges_prev = item_prev.edge_index.numpy().T
             scaled_offsets_prev = scaled_offsets.copy()
-            
+
             position_prev = forward_rotations(
                 parents_prev, scaled_offsets_prev, Quaternions(rotation_prev[None, ...])
             )[0]

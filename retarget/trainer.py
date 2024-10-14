@@ -36,7 +36,7 @@ def trainer(
     test_dataloader,
     device="cuda",
     num_epochs=500,
-    val_loss_scale=1/30,
+    val_loss_scale=1 / 30,
     resume_from_epoch=None,
 ):
     optimizer = torch.optim.AdamW(model.parameters(), lr=1e-3, weight_decay=0.001)
@@ -67,34 +67,38 @@ def trainer(
 
             batch = batch.to(device)
             batch_prev = batch_prev.to(device)
-            frame_time = frame_time[:,None,None].to(device)
-            
-            #Create mask, position and d6 for original frame
+            frame_time = frame_time[:, None, None].to(device)
+
+            # Create mask, position and d6 for original frame
             mask = mask_from_batch(batch)
             position = graph_to_batch(batch.position, mask)
             d6 = graph_to_batch(batch.d6, mask)
 
-            #Create mask, position and d6 for previous frame
+            # Create mask, position and d6 for previous frame
             mask_prev = mask_from_batch(batch_prev)
             position_prev = graph_to_batch(batch_prev.position, mask_prev)
             d6_prev = graph_to_batch(batch_prev.d6, mask_prev)
-            
+
             optimizer.zero_grad()
 
-            #Create prediction for original frame
+            # Create prediction for original frame
             y_pred, mean, log_var = model(
                 batch.x, batch.pos, batch.edge_index, mask=mask
             )
 
-            fk_pose, edge_indexs = fk_for_batch(batch, y_pred, quater=False, rotations_fmt='d6')
+            fk_pose, edge_indexs = fk_for_batch(
+                batch, y_pred, quater=False, rotations_fmt="d6"
+            )
             fk_pose = fk_pose - fk_pose[..., 0:1, :]
 
-            #Create prediction for previous frame
+            # Create prediction for previous frame
             y_pred_prev, mean_prev, log_var_prev = model(
                 batch_prev.x, batch_prev.pos, batch_prev.edge_index, mask=mask_prev
             )
 
-            fk_pose_prev, edge_indexs_prev = fk_for_batch(batch_prev, y_pred_prev, quater=False, rotations_fmt='d6')
+            fk_pose_prev, edge_indexs_prev = fk_for_batch(
+                batch_prev, y_pred_prev, quater=False, rotations_fmt="d6"
+            )
             fk_pose_prev = fk_pose_prev - fk_pose_prev[..., 0:1, :]
 
             # create a boolean mask for the children of the root (idx 0)
@@ -109,8 +113,13 @@ def trainer(
                 torch.norm(position - fk_pose, dim=-1) * mask
             ).sum() / mask.sum()
             vel_loss = (
-                torch.norm(((position - position_prev) - (fk_pose - fk_pose_prev)) / frame_time, dim=-1) * mask
-                ).sum() / mask.sum()
+                torch.norm(
+                    ((position - position_prev) - (fk_pose - fk_pose_prev))
+                    / frame_time,
+                    dim=-1,
+                )
+                * mask
+            ).sum() / mask.sum()
             recn_loss_root_children = (
                 torch.norm(position - fk_pose, dim=-1) * children_mask
             ).sum() / children_mask.sum()
@@ -118,7 +127,13 @@ def trainer(
 
             kl_loss = -0.5 * torch.sum(1 + log_var - mean.pow(2) - log_var.exp())
 
-            loss = recn_loss + (1e-6 * kl_loss) + 10 * recn_loss_root_children + d6_loss + val_loss_scale * vel_loss
+            loss = (
+                recn_loss
+                + (1e-6 * kl_loss)
+                + 10 * recn_loss_root_children
+                + d6_loss
+                + val_loss_scale * vel_loss
+            )
             loss = loss.mean()
 
             loss.backward()
@@ -152,7 +167,9 @@ def trainer(
                     mask=mask.to(device),
                 )
 
-                fk_pose, edge_indexs = fk_for_batch(batch, y_pred, quater=False, rotations_fmt='d6')
+                fk_pose, edge_indexs = fk_for_batch(
+                    batch, y_pred, quater=False, rotations_fmt="d6"
+                )
                 fk_pose = fk_pose - fk_pose[..., 0:1, :]
 
                 val_loss = (

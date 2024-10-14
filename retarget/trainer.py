@@ -36,6 +36,7 @@ def trainer(
     test_dataloader,
     device="cuda",
     num_epochs=500,
+    val_loss_scale=1/30,
     resume_from_epoch=None,
 ):
     optimizer = torch.optim.AdamW(model.parameters(), lr=1e-3, weight_decay=0.001)
@@ -61,12 +62,13 @@ def trainer(
         pbar = tqdm(dataloader)
         # lr_scheduler = get_cosine_schedule_with_warmup(optimizer, num_warmup_steps=200, num_training_steps=len(dataloader))
         # lr_scheduler = get_cosine_with_hard_restarts_schedule_with_warmup(optimizer, num_warmup_steps=200, num_training_steps=len(dataloader) * num_epochs, num_cycles=num_epochs)
-        for batch,batch_prev in pbar:
+        for batch, batch_prev, frame_time in pbar:
             batch_idx += 1
 
             batch = batch.to(device)
             batch_prev = batch_prev.to(device)
-
+            frame_time = frame_time[:,None,None].to(device)
+            
             #Create mask, position and d6 for original frame
             mask = mask_from_batch(batch)
             position = graph_to_batch(batch.position, mask)
@@ -107,7 +109,7 @@ def trainer(
                 torch.norm(position - fk_pose, dim=-1) * mask
             ).sum() / mask.sum()
             vel_loss = (
-                torch.norm((position - position_prev) - (fk_pose - fk_pose_prev),dim=-1) * mask
+                torch.norm(((position - position_prev) - (fk_pose - fk_pose_prev)) / frame_time, dim=-1) * mask
                 ).sum() / mask.sum()
             recn_loss_root_children = (
                 torch.norm(position - fk_pose, dim=-1) * children_mask
@@ -116,7 +118,7 @@ def trainer(
 
             kl_loss = -0.5 * torch.sum(1 + log_var - mean.pow(2) - log_var.exp())
 
-            loss = recn_loss + (1e-6 * kl_loss) + 10 * recn_loss_root_children + d6_loss
+            loss = recn_loss + (1e-6 * kl_loss) + 10 * recn_loss_root_children + d6_loss + val_loss_scale * vel_loss
             loss = loss.mean()
 
             loss.backward()

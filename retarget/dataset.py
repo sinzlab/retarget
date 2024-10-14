@@ -2,7 +2,6 @@ from pathlib import Path
 
 import numpy as np
 import torch
-import copy
 from torch_geometric.data import Data, Dataset
 
 import retarget.utils.AnimationStructure as AnimationStructure

@@ -74,7 +74,6 @@ class MixamoDataset(Dataset):
             self.data = self.data + animation_graphs
             if mode == "train":
                 self.time = self.time + [time] * n_graphs
-
                 for i in range(n_graphs):
                     if i == 0:
                         self.data_prev.append(animation_graphs[i].clone())

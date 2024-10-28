@@ -37,6 +37,7 @@ def trainer(
     device="cuda",
     num_epochs=500,
     val_loss_scale=1 / 30,
+    acc_loss_scale=(1 / 30) ** 2,
     resume_from_epoch=None,
 ):
     optimizer = torch.optim.AdamW(model.parameters(), lr=1e-3, weight_decay=0.001)
@@ -62,11 +63,18 @@ def trainer(
         pbar = tqdm(dataloader)
         # lr_scheduler = get_cosine_schedule_with_warmup(optimizer, num_warmup_steps=200, num_training_steps=len(dataloader))
         # lr_scheduler = get_cosine_with_hard_restarts_schedule_with_warmup(optimizer, num_warmup_steps=200, num_training_steps=len(dataloader) * num_epochs, num_cycles=num_epochs)
-        for batch, batch_prev, frame_time in pbar:
+        for (
+            batch,
+            batch_prev,
+            batch_prev_prev,
+            batch_prev_prev_prev,
+            frame_time,
+        ) in pbar:
             batch_idx += 1
 
             batch = batch.to(device)
             batch_prev = batch_prev.to(device)
+            batch_prev_prev = batch_prev_prev.to(device)
             frame_time = frame_time[:, None, None].to(device)
 
             # Create mask, position and d6 for original frame
@@ -79,6 +87,23 @@ def trainer(
             position_prev = graph_to_batch(batch_prev.position, mask_prev)
             d6_prev = graph_to_batch(batch_prev.d6, mask_prev)
 
+            # Create mask, position and d6 for previous previous frame
+            mask_prev_prev = mask_from_batch(batch_prev_prev)
+            position_prev_prev = graph_to_batch(
+                batch_prev_prev.position, mask_prev_prev
+            )
+            d6_prev_prev = graph_to_batch(batch_prev_prev.d6, mask_prev_prev)
+
+            # Create mask, position and d6 for previous previous previous frame
+            mask_prev_prev_prev = mask_from_batch(batch_prev_prev_prev)
+            position_prev_prev_prev = graph_to_batch(
+                batch_prev_prev_prev.position, mask_prev_prev_prev
+            )
+            d6_prev_prev_prev = graph_to_batch(
+                batch_prev_prev_prev.d6, mask_prev_prev_prev
+            )
+
+            # Set optimiser grad to zero
             optimizer.zero_grad()
 
             # Create prediction for original frame
@@ -101,6 +126,37 @@ def trainer(
             )
             fk_pose_prev = fk_pose_prev - fk_pose_prev[..., 0:1, :]
 
+            # Create prediction for previous previous frame
+            y_pred_prev_prev, mean_prev_prev, log_var_prev_prev = model(
+                batch_prev_prev.x,
+                batch_prev_prev.pos,
+                batch_prev_prev.edge_index,
+                mask=mask_prev_prev,
+            )
+
+            fk_pose_prev_prev, edge_indexs_prev_prev = fk_for_batch(
+                batch_prev_prev, y_pred_prev_prev, quater=False, rotations_fmt="d6"
+            )
+            fk_pose_prev_prev = fk_pose_prev_prev - fk_pose_prev_prev[..., 0:1, :]
+
+            # Create prediction for previous previous previousframe
+            y_pred_prev_prev_prev, mean_prev_prev_prev, log_var_prev_prev_prev = model(
+                batch_prev_prev_prev.x,
+                batch_prev_prev_prev.pos,
+                batch_prev_prev_prev.edge_index,
+                mask=mask_prev_prev_prev,
+            )
+
+            fk_pose_prev_prev_prev, edge_indexs_prev_prev_prev = fk_for_batch(
+                batch_prev_prev_prev,
+                y_pred_prev_prev_prev,
+                quater=False,
+                rotations_fmt="d6",
+            )
+            fk_pose_prev_prev_prev = (
+                fk_pose_prev_prev_prev - fk_pose_prev_prev_prev[..., 0:1, :]
+            )
+
             # create a boolean mask for the children of the root (idx 0)
             children_mask = torch.zeros(
                 fk_pose.shape[0], fk_pose.shape[1], device=device
@@ -108,23 +164,28 @@ def trainer(
             item, idx = torch.where(edge_indexs[:, :, 0] == 0)
             children_mask[item, edge_indexs[item, idx, 1]] = 1
 
+            # Calculate velocities for time steps t, t-1, t-2 for jerk/velocity loss
+            v_t = (position - position_prev) / frame_time
+            v_t_pred = (fk_pose - fk_pose_prev) / frame_time
+            v_t_minus_1_pred = (fk_pose_prev - fk_pose_prev_prev) / frame_time
+            v_t_minus_2_pred = (fk_pose_prev_prev - fk_pose_prev_prev_prev) / frame_time
+
+            # Calculate acceleration for time steps t and t-1 for jerk loss
+            a_t_pred = (v_t_pred - v_t_minus_1_pred) / frame_time
+            a_t_minus_1_pred = (v_t_minus_1_pred - v_t_minus_2_pred) / frame_time
+
             # compute losses
             recn_loss = (
                 torch.norm(position - fk_pose, dim=-1) * mask
             ).sum() / mask.sum()
-            vel_loss = (
-                torch.norm(
-                    ((position - position_prev) - (fk_pose - fk_pose_prev))
-                    / frame_time,
-                    dim=-1,
-                )
-                * mask
+            vel_loss = (torch.norm(v_t - v_t_pred, dim=-1) * mask).sum() / mask.sum()
+            acc_loss = (
+                torch.norm(a_t_pred - a_t_minus_1_pred, dim=-1) * mask
             ).sum() / mask.sum()
             recn_loss_root_children = (
                 torch.norm(position - fk_pose, dim=-1) * children_mask
             ).sum() / children_mask.sum()
             d6_loss = (torch.norm(d6 - y_pred, dim=-1) * mask).sum() / mask.sum()
-
             kl_loss = -0.5 * torch.sum(1 + log_var - mean.pow(2) - log_var.exp())
 
             loss = (
@@ -133,6 +194,7 @@ def trainer(
                 + 10 * recn_loss_root_children
                 + d6_loss
                 + val_loss_scale * vel_loss
+                + acc_loss_scale * acc_loss
             )
             loss = loss.mean()
 

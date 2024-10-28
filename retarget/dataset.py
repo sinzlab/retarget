@@ -65,6 +65,8 @@ class MixamoDataset(Dataset):
         # Also Initialize empty list with frame times between frames
         if mode == "train":
             self.data_prev = []
+            self.data_prev_prev = []
+            self.data_prev_prev_prev = []
             self.time = []
 
         for animation, time in zip(self.animations, self.frame_time):
@@ -76,9 +78,21 @@ class MixamoDataset(Dataset):
                 self.time = self.time + [time] * n_graphs
                 for i in range(n_graphs):
                     if i == 0:
-                        self.data_prev.append(animation_graphs[i].clone())
+                        self.data_prev.append(animation_graphs[i])
+                        self.data_prev_prev.append(animation_graphs[i])
+                        self.data_prev_prev_prev.append(animation_graphs[i])
+                    elif i == 1:
+                        self.data_prev.append(animation_graphs[i - 1])
+                        self.data_prev_prev.append(animation_graphs[i - 1])
+                        self.data_prev_prev_prev.append(animation_graphs[i - 1])
+                    elif i == 2:
+                        self.data_prev.append(animation_graphs[i - 1])
+                        self.data_prev_prev.append(animation_graphs[i - 2])
+                        self.data_prev_prev_prev.append(animation_graphs[i - 2])
                     else:
-                        self.data_prev.append(animation_graphs[i - 1].clone())
+                        self.data_prev.append(animation_graphs[i - 1])
+                        self.data_prev_prev.append(animation_graphs[i - 2])
+                        self.data_prev_prev_prev.append(animation_graphs[i - 3])
 
         print("=== Mixamo Dataset Summary ===")
         print(
@@ -95,17 +109,22 @@ class MixamoDataset(Dataset):
         return len(self.data)
 
     def __getitem__(self, idx):
-        item = self.data[idx]
-
+        item = self.data[idx].clone()
         if self.mode == "train":
 
             # If the mode is "train", then also define the frame time
             frame_time = self.time[idx]
 
             # If the mode is "train", then also define the previous frame
-            item_prev = self.data_prev[idx]
+            item_prev = self.data_prev[idx].clone()
 
-            # Offsets from previous frame and current frame is the same (From same Animation)
+            # If the mode is "train", then also define the previous previous frame
+            item_prev_prev = self.data_prev_prev[idx].clone()
+
+            # If the mode is "train", then also define the previous previous previous frame
+            item_prev_prev_prev = self.data_prev_prev_prev[idx].clone()
+
+            # Offsets from (previous-) previous frame and current frame is the same (From same Animation)
             scaled_offsets = item.offsets.numpy().copy()
             if np.random.rand() < 0.5:
                 scaled_offsets = scaled_offsets * np.random.uniform(
@@ -149,6 +168,46 @@ class MixamoDataset(Dataset):
             item_prev.offsets = torch.Tensor(scaled_offsets_prev)
             item_prev.t_pose = torch.Tensor(t_pose_prev)
 
-            return item, item_prev, frame_time
+            # For previous previous frame
+            parents_prev_prev = item_prev_prev.parents.numpy()
+            rotation_prev_prev = item_prev_prev.rotation.numpy()
+            edges_prev_prev = item_prev_prev.edge_index.numpy().T
+            scaled_offsets_prev_prev = scaled_offsets.copy()
+
+            position_prev_prev = forward_rotations(
+                parents_prev_prev,
+                scaled_offsets_prev_prev,
+                Quaternions(rotation_prev_prev[None, ...]),
+            )[0]
+
+            t_pose_prev_prev = AnimationStructure.t_pose(
+                scaled_offsets_prev_prev, edges_prev_prev
+            )
+
+            item_prev_prev.position = torch.Tensor(position_prev_prev)
+            item_prev_prev.offsets = torch.Tensor(scaled_offsets_prev_prev)
+            item_prev_prev.t_pose = torch.Tensor(t_pose_prev_prev)
+
+            # For previous previous previous frame
+            parents_prev_prev_prev = item_prev_prev_prev.parents.numpy()
+            rotation_prev_prev_prev = item_prev_prev_prev.rotation.numpy()
+            edges_prev_prev_prev = item_prev_prev_prev.edge_index.numpy().T
+            scaled_offsets_prev_prev_prev = scaled_offsets.copy()
+
+            position_prev_prev_prev = forward_rotations(
+                parents_prev_prev_prev,
+                scaled_offsets_prev_prev_prev,
+                Quaternions(rotation_prev_prev_prev[None, ...]),
+            )[0]
+
+            t_pose_prev_prev_prev = AnimationStructure.t_pose(
+                scaled_offsets_prev_prev_prev, edges_prev_prev_prev
+            )
+
+            item_prev_prev_prev.position = torch.Tensor(position_prev_prev_prev)
+            item_prev_prev_prev.offsets = torch.Tensor(scaled_offsets_prev_prev_prev)
+            item_prev_prev_prev.t_pose = torch.Tensor(t_pose_prev_prev_prev)
+
+            return item, item_prev, item_prev_prev, item_prev_prev_prev, frame_time
 
         return item

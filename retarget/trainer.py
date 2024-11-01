@@ -255,6 +255,7 @@ def trainer(
                     }, 
                     f"./models/local/{wandb_name}_latest_checkpoint.tar",
         )
+        wandb.save(f"./models/local/{wandb_name}_latest_checkpoint.tar")
         
         print(
             f"Epoch [{epoch+1}/{num_epochs}], Batch [{batch_idx} / {n_batches}] Loss: {np.mean(epoch_loss)} | val_losses: {np.mean(val_losses)}"

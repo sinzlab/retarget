@@ -40,6 +40,8 @@ def trainer(
     acc_loss_scale=(1 / 30) ** 2,
     resume_from_epoch=None,
 ):
+
+    wandb_name = wandb.run.name
     optimizer = torch.optim.AdamW(model.parameters(), lr=1e-3, weight_decay=0.001)
 
     model = model.to(device)
@@ -75,6 +77,7 @@ def trainer(
             batch = batch.to(device)
             batch_prev = batch_prev.to(device)
             batch_prev_prev = batch_prev_prev.to(device)
+            batch_prev_prev_prev = batch_prev_prev_prev.to(device)
             frame_time = frame_time[:, None, None].to(device)
 
             # Create mask, position and d6 for original frame
@@ -239,12 +242,20 @@ def trainer(
                 ).sum() / mask.sum()
 
                 val_losses.append(val_loss.item())
-
+        
         if np.mean(val_losses) < prev_best_val_loss:
             prev_best_val_loss = np.mean(val_losses)
-            torch.save(model.state_dict(), f"./models/local/best_model.pt")
-            wandb.save(f"./models/local/best_model.pt")
-
+            torch.save(model.state_dict(), f"./models/local/{wandb_name}_best_model.pt")
+            wandb.save(f"./models/local/{wandb_name}_best_model.pt")
+        
+        #Save the latest model with optimizer and scheduler and epoch
+        torch.save({"model": model.state_dict(),
+                    "optimizer": optimizer.state_dict(),
+                    "scheduler": lr_scheduler.state_dict(),
+                    }, 
+                    f"./models/local/{wandb_name}_latest_checkpoint.tar",
+        )
+        
         print(
             f"Epoch [{epoch+1}/{num_epochs}], Batch [{batch_idx} / {n_batches}] Loss: {np.mean(epoch_loss)} | val_losses: {np.mean(val_losses)}"
         )

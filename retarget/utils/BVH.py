@@ -23,7 +23,7 @@ ordermap = {
 }
 
 
-def load(filename, start=None, end=None, order=None, world=False):
+def load(filename, start=None, end=None, order=None, world=False, ground_feet=False):
     """
     Reads a BVH file and constructs an animation
 
@@ -279,6 +279,9 @@ def load(filename, start=None, end=None, order=None, world=False):
     factor = 10 / magnitude
     offsets *= factor
 
+    if ground_feet:
+        positions *= factor
+    
     rotations = Quaternions.from_euler(np.radians(rotations), order=order, world=world)
 
     return (

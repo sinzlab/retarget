@@ -11,7 +11,7 @@ from retarget.utils.Quaternions_old import Quaternions, quat_2_d6
 
 
 class MixamoDataset(Dataset):
-    def __init__(self, directory, mode="train"):
+    def __init__(self, directory, mode="train", ground_feet = False):
         super().__init__()
 
         animations = {}
@@ -26,7 +26,8 @@ class MixamoDataset(Dataset):
         # characters = [character for character in characters if character.name in exclude_characters]
 
         # characters = [character for character in characters if character.name not in exclude_characters]
-
+    
+        self.ground_feet = ground_feet
         self.mode = mode
         stride = 1 if mode == "train" else 64
 
@@ -41,7 +42,7 @@ class MixamoDataset(Dataset):
                         animations[character.name][action.name],
                         _,
                         (frame_times[character.name][action.name], _, _),
-                    ) = load(action)
+                    ) = load(action, ground_feet=ground_feet)
                 except Exception as e:
                     print(f"Error loading {character.name}/{action.name}: {e}")
 
@@ -59,7 +60,11 @@ class MixamoDataset(Dataset):
         ]
         # Create Empty list to fill with frames as graph
         self.data = []
-
+        
+        #If mode = Test, then also include the trajectory positions
+        if self.ground_feet:
+            self.trajectory = []
+        
         # Initialize empty list to put in the previous frames of a given frame
         # This is used for the velocity loss
         # Also Initialize empty list with frame times between frames
@@ -74,7 +79,12 @@ class MixamoDataset(Dataset):
             n_graphs = len(animation_graphs)
 
             self.data = self.data + animation_graphs
-            if mode == "train":
+            
+            #Save the root trajectory of animation
+            if self.ground_feet:
+                self.trajectory += list(torch.tensor(animation.positions[...,0:1,:]))
+                
+            if self.mode == "train":
                 self.time = self.time + [time] * n_graphs
                 for i in range(n_graphs):
                     if i == 0:
@@ -209,5 +219,8 @@ class MixamoDataset(Dataset):
             item_prev_prev_prev.t_pose = torch.Tensor(t_pose_prev_prev_prev)
 
             return item, item_prev, item_prev_prev, item_prev_prev_prev, frame_time
-
+        
+        if self.ground_feet:
+            return item, self.trajectory[idx]
+        
         return item

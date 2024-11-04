@@ -260,6 +260,7 @@ def trainer(
         torch.save({"model": model.state_dict(),
                     "optimizer": optimizer.state_dict(),
                     "scheduler": lr_scheduler.state_dict(),
+                    "epoch": epoch,
                     }, 
                     f"./models/local/{wandb_name}_latest_checkpoint.tar",
         )

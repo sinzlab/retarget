@@ -99,19 +99,18 @@ class MixamoDataset(Dataset):
 
                 #Previous Previous frame
                 idx_prev_prev = np.arange(n_graphs)
-                idx_prev_prev[1:] -= 1
-                idx_prev_prev[2:] -= 1
+                idx_prev_prev[1:3] -= 1
+                idx_prev_prev[3:] -= 2
                 idx_prev_prev += total_frames_currently
                 self.data_prev_prev += list(idx_prev_prev)
 
                 #Previous Previous Previous frame
                 idx_prev_prev_prev = np.arange(n_graphs)
-                idx_prev_prev_prev[1:] -= 1
-                idx_prev_prev_prev[2:] -= 1
-                idx_prev_prev_prev[3:] -= 1
+                idx_prev_prev_prev[1:3] -= 1
+                idx_prev_prev_prev[3:] -= 3
                 idx_prev_prev_prev += total_frames_currently
                 self.data_prev_prev_prev += list(idx_prev_prev_prev)
-                
+
         print("=== Mixamo Dataset Summary ===")
         print(
             f"Loaded {len(self.animations)} animation clips for {len(animations)} characters"

@@ -123,7 +123,7 @@ def trainer(
             )
 
             fk_pose, edge_indexs = fk_for_batch(
-                batch, y_pred, quater=False, rotations_fmt="d6"
+                batch, y_pred, quater=False, rotations_fmt="d6", device=device
             )
             fk_pose = fk_pose - fk_pose[..., 0:1, :]
 
@@ -133,7 +133,7 @@ def trainer(
             )
 
             fk_pose_prev, edge_indexs_prev = fk_for_batch(
-                batch_prev, y_pred_prev, quater=False, rotations_fmt="d6"
+                batch_prev, y_pred_prev, quater=False, rotations_fmt="d6", device=device
             )
             fk_pose_prev = fk_pose_prev - fk_pose_prev[..., 0:1, :]
 
@@ -146,7 +146,7 @@ def trainer(
             )
 
             fk_pose_prev_prev, edge_indexs_prev_prev = fk_for_batch(
-                batch_prev_prev, y_pred_prev_prev, quater=False, rotations_fmt="d6"
+                batch_prev_prev, y_pred_prev_prev, quater=False, rotations_fmt="d6", device=device
             )
             fk_pose_prev_prev = fk_pose_prev_prev - fk_pose_prev_prev[..., 0:1, :]
 
@@ -163,6 +163,7 @@ def trainer(
                 y_pred_prev_prev_prev,
                 quater=False,
                 rotations_fmt="d6",
+                device=device,
             )
             fk_pose_prev_prev_prev = (
                 fk_pose_prev_prev_prev - fk_pose_prev_prev_prev[..., 0:1, :]
@@ -207,6 +208,7 @@ def trainer(
                 + val_loss_scale * vel_loss
                 + acc_loss_scale * acc_loss
             )
+
             loss = loss.mean()
 
             loss.backward()
@@ -241,7 +243,7 @@ def trainer(
                 )
 
                 fk_pose, edge_indexs = fk_for_batch(
-                    batch, y_pred, quater=False, rotations_fmt="d6"
+                    batch, y_pred, quater=False, rotations_fmt="d6", device=device
                 )
                 fk_pose = fk_pose - fk_pose[..., 0:1, :]
 

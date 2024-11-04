@@ -1,4 +1,4 @@
-# import os
+import os
 # remove wandb folder
 if os.path.exists("./wandb"):
     import shutil

@@ -39,11 +39,15 @@ def trainer(
     val_loss_scale=1 / 30,
     acc_loss_scale=(1 / 30) ** 2,
     resume_from_epoch=None,
+    resume_checkpoint=None,
 ):
 
     wandb_name = wandb.run.name
-    optimizer = torch.optim.AdamW(model.parameters(), lr=1e-3, weight_decay=0.001)
 
+    optimizer = torch.optim.AdamW(model.parameters(), lr=1e-3, weight_decay=0.001)
+    if resume_checkpoint:
+        optimizer.load_state_dict(resume_checkpoint["optimizer"])
+        
     model = model.to(device)
 
     losses = []
@@ -58,6 +62,10 @@ def trainer(
         gamma=1e-1 ** (1 / num_epochs),
         last_epoch=-1,
     )
+
+    if resume_checkpoint:
+        lr_scheduler.load_state_dict(resume_checkpoint["scheduler"])
+    
     for epoch in range(resume_from_epoch, num_epochs):
         n_batches = len(dataloader)
         batch_idx = 0

@@ -77,7 +77,8 @@ class MixamoDataset(Dataset):
         for animation, time in zip(self.animations, self.frame_time):
             animation_graphs = animation.as_graph()
             n_graphs = len(animation_graphs)
-
+            total_frames_currently = len(self.data)
+            
             self.data = self.data + animation_graphs
             
             #Save the root trajectory of animation
@@ -86,24 +87,31 @@ class MixamoDataset(Dataset):
                 
             if self.mode == "train":
                 self.time = self.time + [time] * n_graphs
-                for i in range(n_graphs):
-                    if i == 0:
-                        self.data_prev.append(animation_graphs[i])
-                        self.data_prev_prev.append(animation_graphs[i])
-                        self.data_prev_prev_prev.append(animation_graphs[i])
-                    elif i == 1:
-                        self.data_prev.append(animation_graphs[i - 1])
-                        self.data_prev_prev.append(animation_graphs[i - 1])
-                        self.data_prev_prev_prev.append(animation_graphs[i - 1])
-                    elif i == 2:
-                        self.data_prev.append(animation_graphs[i - 1])
-                        self.data_prev_prev.append(animation_graphs[i - 2])
-                        self.data_prev_prev_prev.append(animation_graphs[i - 2])
-                    else:
-                        self.data_prev.append(animation_graphs[i - 1])
-                        self.data_prev_prev.append(animation_graphs[i - 2])
-                        self.data_prev_prev_prev.append(animation_graphs[i - 3])
 
+                #Save index of self.data of prev, prev prev, prev prev prev frame
+                #prev is here an abbreviation for previous
+                
+                #Previous frame
+                idx_prev = np.arange(n_graphs)
+                idx_prev[1:] -= 1
+                idx_prev += total_frames_currently
+                self.data_prev += list(idx_prev)
+
+                #Previous Previous frame
+                idx_prev_prev = np.arange(n_graphs)
+                idx_prev_prev[1:] -= 1
+                idx_prev_prev[2:] -= 1
+                idx_prev_prev += total_frames_currently
+                self.data_prev_prev += list(idx_prev_prev)
+
+                #Previous Previous Previous frame
+                idx_prev_prev_prev = np.arange(n_graphs)
+                idx_prev_prev_prev[1:] -= 1
+                idx_prev_prev_prev[2:] -= 1
+                idx_prev_prev_prev[3:] -= 1
+                idx_prev_prev_prev += total_frames_currently
+                self.data_prev_prev_prev += list(idx_prev_prev_prev)
+                
         print("=== Mixamo Dataset Summary ===")
         print(
             f"Loaded {len(self.animations)} animation clips for {len(animations)} characters"
@@ -126,13 +134,13 @@ class MixamoDataset(Dataset):
             frame_time = self.time[idx]
 
             # If the mode is "train", then also define the previous frame
-            item_prev = self.data_prev[idx].clone()
+            item_prev = self.data[self.data_prev[idx]].clone()
 
             # If the mode is "train", then also define the previous previous frame
-            item_prev_prev = self.data_prev_prev[idx].clone()
+            item_prev_prev = self.data[self.data_prev_prev[idx]].clone()
 
             # If the mode is "train", then also define the previous previous previous frame
-            item_prev_prev_prev = self.data_prev_prev_prev[idx].clone()
+            item_prev_prev_prev = self.data[self.data_prev_prev_prev[idx]].clone()
 
             # Offsets from (previous-) previous frame and current frame is the same (From same Animation)
             scaled_offsets = item.offsets.numpy().copy()

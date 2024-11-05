@@ -11,7 +11,7 @@ from retarget.utils.Quaternions_old import Quaternions, quat_2_d6
 
 
 class MixamoDataset(Dataset):
-    def __init__(self, directory, mode="train", ground_feet = False):
+    def __init__(self, directory, mode="train", ground_feet=False):
         super().__init__()
 
         animations = {}
@@ -26,7 +26,7 @@ class MixamoDataset(Dataset):
         # characters = [character for character in characters if character.name in exclude_characters]
 
         # characters = [character for character in characters if character.name not in exclude_characters]
-    
+
         self.ground_feet = ground_feet
         self.mode = mode
         stride = 1 if mode == "train" else 64
@@ -60,11 +60,11 @@ class MixamoDataset(Dataset):
         ]
         # Create Empty list to fill with frames as graph
         self.data = []
-        
-        #If mode = Test, then also include the trajectory positions
+
+        # If mode = Test, then also include the trajectory positions
         if self.ground_feet:
             self.trajectory = []
-        
+
         # Initialize empty list to put in the previous frames of a given frame
         # This is used for the velocity loss
         # Also Initialize empty list with frame times between frames
@@ -78,33 +78,33 @@ class MixamoDataset(Dataset):
             animation_graphs = animation.as_graph()
             n_graphs = len(animation_graphs)
             total_frames_currently = len(self.data)
-            
+
             self.data = self.data + animation_graphs
-            
-            #Save the root trajectory of animation
+
+            # Save the root trajectory of animation
             if self.ground_feet:
-                self.trajectory += list(torch.tensor(animation.positions[...,0:1,:]))
-                
+                self.trajectory += list(torch.tensor(animation.positions[..., 0:1, :]))
+
             if self.mode == "train":
                 self.time = self.time + [time] * n_graphs
 
-                #Save index of self.data of prev, prev prev, prev prev prev frame
-                #prev is here an abbreviation for previous
-                
-                #Previous frame
+                # Save index of self.data of prev, prev prev, prev prev prev frame
+                # prev is here an abbreviation for previous
+
+                # Previous frame
                 idx_prev = np.arange(n_graphs)
                 idx_prev[1:] -= 1
                 idx_prev += total_frames_currently
                 self.data_prev += list(idx_prev)
 
-                #Previous Previous frame
+                # Previous Previous frame
                 idx_prev_prev = np.arange(n_graphs)
                 idx_prev_prev[1:3] -= 1
                 idx_prev_prev[3:] -= 2
                 idx_prev_prev += total_frames_currently
                 self.data_prev_prev += list(idx_prev_prev)
 
-                #Previous Previous Previous frame
+                # Previous Previous Previous frame
                 idx_prev_prev_prev = np.arange(n_graphs)
                 idx_prev_prev_prev[1:3] -= 1
                 idx_prev_prev_prev[3:] -= 3
@@ -226,8 +226,8 @@ class MixamoDataset(Dataset):
             item_prev_prev_prev.t_pose = torch.Tensor(t_pose_prev_prev_prev)
 
             return item, item_prev, item_prev_prev, item_prev_prev_prev, frame_time
-        
+
         if self.ground_feet:
             return item, self.trajectory[idx]
-        
+
         return item

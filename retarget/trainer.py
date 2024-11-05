@@ -47,7 +47,7 @@ def trainer(
     optimizer = torch.optim.AdamW(model.parameters(), lr=1e-3, weight_decay=0.001)
     if resume_checkpoint:
         optimizer.load_state_dict(resume_checkpoint["optimizer"])
-        
+
     model = model.to(device)
 
     losses = []
@@ -65,7 +65,7 @@ def trainer(
 
     if resume_checkpoint:
         lr_scheduler.load_state_dict(resume_checkpoint["scheduler"])
-    
+
     for epoch in range(resume_from_epoch, num_epochs):
         n_batches = len(dataloader)
         batch_idx = 0
@@ -146,7 +146,11 @@ def trainer(
             )
 
             fk_pose_prev_prev, edge_indexs_prev_prev = fk_for_batch(
-                batch_prev_prev, y_pred_prev_prev, quater=False, rotations_fmt="d6", device=device
+                batch_prev_prev,
+                y_pred_prev_prev,
+                quater=False,
+                rotations_fmt="d6",
+                device=device,
             )
             fk_pose_prev_prev = fk_pose_prev_prev - fk_pose_prev_prev[..., 0:1, :]
 
@@ -252,22 +256,24 @@ def trainer(
                 ).sum() / mask.sum()
 
                 val_losses.append(val_loss.item())
-        
+
         if np.mean(val_losses) < prev_best_val_loss:
             prev_best_val_loss = np.mean(val_losses)
             torch.save(model.state_dict(), f"./models/local/{wandb_name}_best_model.pt")
             wandb.save(f"./models/local/{wandb_name}_best_model.pt")
-        
-        #Save the latest model with optimizer and scheduler and epoch
-        torch.save({"model": model.state_dict(),
-                    "optimizer": optimizer.state_dict(),
-                    "scheduler": lr_scheduler.state_dict(),
-                    "epoch": epoch,
-                    }, 
-                    f"./models/local/{wandb_name}_latest_checkpoint.tar",
+
+        # Save the latest model with optimizer and scheduler and epoch
+        torch.save(
+            {
+                "model": model.state_dict(),
+                "optimizer": optimizer.state_dict(),
+                "scheduler": lr_scheduler.state_dict(),
+                "epoch": epoch,
+            },
+            f"./models/local/{wandb_name}_latest_checkpoint.tar",
         )
         wandb.save(f"./models/local/{wandb_name}_latest_checkpoint.tar")
-        
+
         print(
             f"Epoch [{epoch+1}/{num_epochs}], Batch [{batch_idx} / {n_batches}] Loss: {np.mean(epoch_loss)} | val_losses: {np.mean(val_losses)}"
         )

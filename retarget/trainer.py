@@ -229,6 +229,9 @@ def trainer(
             )
 
             wandb.log({"loss": recn_loss.item()})
+            wandb.log({"angle loss": d6_loss.item()})
+            wandb.log({"scaled velocity loss": (val_loss_scale * vel_loss).item()})
+            wandb.log({"scaled accelaration loss": (acc_loss_scale * acc_loss).item()})
 
             lr_scheduler.step()
 

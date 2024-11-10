@@ -37,19 +37,20 @@ def trainer(
     device="cuda",
     num_epochs=500,
     val_loss_scale=1 / 30,
-    acc_loss_scale=(1 / 30) ** 2,
+    acc_loss_scale=0.00001, #(1 / 30) ** 2,
     resume_from_epoch=None,
     resume_checkpoint=None,
 ):
 
     wandb_name = wandb.run.name
 
+    model = model.to(device)
+
     optimizer = torch.optim.AdamW(model.parameters(), lr=1e-3, weight_decay=0.001)
+
     if resume_checkpoint:
         optimizer.load_state_dict(resume_checkpoint["optimizer"])
         
-    model = model.to(device)
-
     losses = []
     prev_best_val_loss = 1e6
     lr_scheduler = CosineAnnealingWarmupRestarts(
@@ -65,7 +66,7 @@ def trainer(
 
     if resume_checkpoint:
         lr_scheduler.load_state_dict(resume_checkpoint["scheduler"])
-    
+
     for epoch in range(resume_from_epoch, num_epochs):
         n_batches = len(dataloader)
         batch_idx = 0
@@ -224,7 +225,11 @@ def trainer(
                 f"Epoch [{epoch+1}/{num_epochs}], Loss: {np.mean(epoch_loss[-10:])}"
             )
 
-            wandb.log({"loss": recn_loss.item()})
+            wandb.log({"loss": recn_loss.item(),
+                       "velocity_loss": vel_loss.item(),
+                       "d6_loss": d6_loss.item(),
+                       "jerk_loss": acc_loss.item(),
+            })
 
             lr_scheduler.step()
 

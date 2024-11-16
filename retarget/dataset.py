@@ -166,7 +166,7 @@ class MixamoDataset(Dataset):
             item.position = torch.Tensor(position)
             item.x[:,6:] = torch.Tensor(position).clone()
             item.offsets = torch.Tensor(scaled_offsets)
-            item.t_pose = torch.Tensor(t_pose)
+            item.pos = torch.Tensor(t_pose)
 
             # For previous frame
             parents_prev = item_prev.parents.numpy()
@@ -183,7 +183,7 @@ class MixamoDataset(Dataset):
             item_prev.x[:,6:] = torch.Tensor(position_prev).clone()
             item_prev.position = torch.Tensor(position_prev)
             item_prev.offsets = torch.Tensor(scaled_offsets_prev)
-            item_prev.t_pose = torch.Tensor(t_pose_prev)
+            item_prev.pos = torch.Tensor(t_pose_prev)
 
             # For previous previous frame
             parents_prev_prev = item_prev_prev.parents.numpy()
@@ -205,7 +205,7 @@ class MixamoDataset(Dataset):
             item_prev_prev.x[:,6:] = torch.Tensor(position_prev_prev).clone()
             item_prev_prev.position = torch.Tensor(position_prev_prev)
             item_prev_prev.offsets = torch.Tensor(scaled_offsets_prev_prev)
-            item_prev_prev.t_pose = torch.Tensor(t_pose_prev_prev)
+            item_prev_prev.pos = torch.Tensor(t_pose_prev_prev)
 
             # For previous previous previous frame
             parents_prev_prev_prev = item_prev_prev_prev.parents.numpy()
@@ -226,7 +226,7 @@ class MixamoDataset(Dataset):
             item_prev_prev_prev.x[:,6:] = torch.Tensor(position_prev_prev_prev).clone()
             item_prev_prev_prev.position = torch.Tensor(position_prev_prev_prev)
             item_prev_prev_prev.offsets = torch.Tensor(scaled_offsets_prev_prev_prev)
-            item_prev_prev_prev.t_pose = torch.Tensor(t_pose_prev_prev_prev)
+            item_prev_prev_prev.pos = torch.Tensor(t_pose_prev_prev_prev)
 
             return item, item_prev, item_prev_prev, item_prev_prev_prev, frame_time
         

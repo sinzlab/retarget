@@ -158,14 +158,13 @@ class MixamoDataset(Dataset):
             parents = item.parents.numpy()
             rotation = item.rotation.numpy()
             edges = item.edge_index.numpy().T
-
             position = forward_rotations(
                 parents, scaled_offsets, Quaternions(rotation[None, ...])
             )[0]
-
             t_pose = AnimationStructure.t_pose(scaled_offsets, edges)
 
             item.position = torch.Tensor(position)
+            item.x[:,6:] = torch.Tensor(position).clone()
             item.offsets = torch.Tensor(scaled_offsets)
             item.t_pose = torch.Tensor(t_pose)
 
@@ -181,6 +180,7 @@ class MixamoDataset(Dataset):
 
             t_pose_prev = AnimationStructure.t_pose(scaled_offsets_prev, edges_prev)
 
+            item_prev.x[:,6:] = torch.Tensor(position_prev).clone()
             item_prev.position = torch.Tensor(position_prev)
             item_prev.offsets = torch.Tensor(scaled_offsets_prev)
             item_prev.t_pose = torch.Tensor(t_pose_prev)
@@ -201,6 +201,8 @@ class MixamoDataset(Dataset):
                 scaled_offsets_prev_prev, edges_prev_prev
             )
 
+
+            item_prev_prev.x[:,6:] = torch.Tensor(position_prev_prev).clone()
             item_prev_prev.position = torch.Tensor(position_prev_prev)
             item_prev_prev.offsets = torch.Tensor(scaled_offsets_prev_prev)
             item_prev_prev.t_pose = torch.Tensor(t_pose_prev_prev)
@@ -220,7 +222,8 @@ class MixamoDataset(Dataset):
             t_pose_prev_prev_prev = AnimationStructure.t_pose(
                 scaled_offsets_prev_prev_prev, edges_prev_prev_prev
             )
-
+            
+            item_prev_prev_prev.x[:,6:] = torch.Tensor(position_prev_prev_prev).clone()
             item_prev_prev_prev.position = torch.Tensor(position_prev_prev_prev)
             item_prev_prev_prev.offsets = torch.Tensor(scaled_offsets_prev_prev_prev)
             item_prev_prev_prev.t_pose = torch.Tensor(t_pose_prev_prev_prev)

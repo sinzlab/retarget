@@ -28,8 +28,8 @@ if __name__ == "__main__":
     torch.backends.cudnn.benchmark = True
 
     # training parameters
-    resume = False#torch.load("./models/local/playful-capybara-136_latest_checkpoint.tar", map_location="cpu")  # 'local/model:49'
-    resume_from_epoch = 0#resume["epoch"]
+    resume = torch.load("./models/local/jumping-gorge-159_latest_checkpoint.tar", map_location="cpu")  # 'local/model:49'
+    resume_from_epoch = resume["epoch"]
     num_epochs = 30
 
     # model parameters

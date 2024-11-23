@@ -75,17 +75,15 @@ def trainer(
         # lr_scheduler = get_cosine_with_hard_restarts_schedule_with_warmup(optimizer, num_warmup_steps=200, num_training_steps=len(dataloader) * num_epochs, num_cycles=num_epochs)
         for (
             batch,
-            batch_prev,
-            batch_prev_prev,
-            batch_prev_prev_prev,
+            previous_batches,
             frame_time,
         ) in pbar:
             batch_idx += 1
 
             batch = batch.to(device)
-            batch_prev = batch_prev.to(device)
-            batch_prev_prev = batch_prev_prev.to(device)
-            batch_prev_prev_prev = batch_prev_prev_prev.to(device)
+            batch_prev = previous_batches[0].to(device)
+            batch_prev_prev = previous_batches[1].to(device)
+            batch_prev_prev_prev = previous_batches[2].to(device)
             frame_time = frame_time[:, None, None].to(device)
 
             # Create mask, position and d6 for original frame
@@ -228,10 +226,11 @@ def trainer(
                 f"Epoch [{epoch+1}/{num_epochs}], Loss: {np.mean(epoch_loss[-10:])}"
             )
 
-            wandb.log({"loss": recn_loss.item()})
-            wandb.log({"angle loss": d6_loss.item()})
-            wandb.log({"scaled velocity loss": (val_loss_scale * vel_loss).item()})
-            wandb.log({"scaled accelaration loss": (acc_loss_scale * acc_loss).item()})
+            wandb.log({"loss": recn_loss.item(),
+                       "angle loss": d6_loss.item(),
+                       "velocity loss": vel_loss.item(),
+                       "accelaration loss": acc_loss.item(),
+            })
 
             lr_scheduler.step()
 
@@ -275,6 +274,7 @@ def trainer(
             },
             f"./models/local/{wandb_name}_latest_checkpoint.tar",
         )
+        
         wandb.save(f"./models/local/{wandb_name}_latest_checkpoint.tar")
 
         print(

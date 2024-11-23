@@ -68,10 +68,9 @@ class MixamoDataset(Dataset):
         # Initialize empty list to put in the previous frames of a given frame
         # This is used for the velocity loss
         # Also Initialize empty list with frame times between frames
+        #self.data_prev[idx] stores the offset frame from the original frame. 
         if mode == "train":
-            self.data_prev = []
-            self.data_prev_prev = []
-            self.data_prev_prev_prev = []
+            self.data_prev = [[],[],[]]
             self.time = []
 
         for animation, time in zip(self.animations, self.frame_time):
@@ -81,7 +80,7 @@ class MixamoDataset(Dataset):
 
             self.data = self.data + animation_graphs
 
-            # Save the root trajectory of animation
+            # Save the root trajectory of animation (List of len N_frames with torch tensors of shape (1,3))
             if self.ground_feet:
                 self.trajectory += list(torch.tensor(animation.positions[..., 0:1, :]))
 
@@ -95,21 +94,21 @@ class MixamoDataset(Dataset):
                 idx_prev = np.arange(n_graphs)
                 idx_prev[1:] -= 1
                 idx_prev += total_frames_currently
-                self.data_prev += list(idx_prev)
+                self.data_prev[0] += list(idx_prev)
 
                 # Previous Previous frame
                 idx_prev_prev = np.arange(n_graphs)
                 idx_prev_prev[1:3] -= 1
                 idx_prev_prev[3:] -= 2
                 idx_prev_prev += total_frames_currently
-                self.data_prev_prev += list(idx_prev_prev)
+                self.data_prev[1] += list(idx_prev_prev)
 
                 # Previous Previous Previous frame
                 idx_prev_prev_prev = np.arange(n_graphs)
                 idx_prev_prev_prev[1:3] -= 1
                 idx_prev_prev_prev[3:] -= 3
                 idx_prev_prev_prev += total_frames_currently
-                self.data_prev_prev_prev += list(idx_prev_prev_prev)
+                self.data_prev[2] += list(idx_prev_prev_prev)
 
         print("=== Mixamo Dataset Summary ===")
         print(
@@ -131,15 +130,15 @@ class MixamoDataset(Dataset):
 
             # If the mode is "train", then also define the frame time
             frame_time = self.time[idx]
-
+            
             # If the mode is "train", then also define the previous frame
-            item_prev = self.data[self.data_prev[idx]].clone()
+            item_prev = self.data[self.data_prev[0][idx]].clone()
 
             # If the mode is "train", then also define the previous previous frame
-            item_prev_prev = self.data[self.data_prev_prev[idx]].clone()
+            item_prev_prev = self.data[self.data_prev[1][idx]].clone()
 
             # If the mode is "train", then also define the previous previous previous frame
-            item_prev_prev_prev = self.data[self.data_prev_prev_prev[idx]].clone()
+            item_prev_prev_prev = self.data[self.data_prev[2][idx]].clone()
 
             # Offsets from (previous-) previous frame and current frame is the same (From same Animation)
             scaled_offsets = item.offsets.numpy().copy()
@@ -225,7 +224,13 @@ class MixamoDataset(Dataset):
             item_prev_prev_prev.offsets = torch.Tensor(scaled_offsets_prev_prev_prev)
             item_prev_prev_prev.t_pose = torch.Tensor(t_pose_prev_prev_prev)
 
-            return item, item_prev, item_prev_prev, item_prev_prev_prev, frame_time
+            #Store all the previous items in one list.
+            previous_items = [item_prev, item_prev_prev, item_prev_prev_prev]
+
+            if self.ground_feet:
+                return item, previous_items, frame_time, self.trajectory[idx]
+            
+            return item, previous_items, frame_time
 
         if self.ground_feet:
             return item, self.trajectory[idx]

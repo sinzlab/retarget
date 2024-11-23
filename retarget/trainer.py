@@ -14,6 +14,7 @@ import numpy as np
 import torch
 from tqdm import tqdm
 
+from retarget.losses import Losses
 from retarget.model import graph_to_batch, mask_from_batch
 from retarget.utils.Animation import fk_for_batch
 from retarget.utils.Quaternions_old import d6_2_rotmat
@@ -178,37 +179,32 @@ def trainer(
             item, idx = torch.where(edge_indexs[:, :, 0] == 0)
             children_mask[item, edge_indexs[item, idx, 1]] = 1
 
-            # Calculate velocities for time steps t, t-1, t-2 for jerk/velocity loss
-            v_t = (position - position_prev) / frame_time
-            v_t_pred = (fk_pose - fk_pose_prev) / frame_time
-            v_t_minus_1_pred = (fk_pose_prev - fk_pose_prev_prev) / frame_time
-            v_t_minus_2_pred = (fk_pose_prev_prev - fk_pose_prev_prev_prev) / frame_time
-
-            # Calculate acceleration for time steps t and t-1 for jerk loss
-            a_t_pred = (v_t_pred - v_t_minus_1_pred) / frame_time
-            a_t_minus_1_pred = (v_t_minus_1_pred - v_t_minus_2_pred) / frame_time
-
+            #Put previous predicted/ ground truth joint position into one list
+            fk_poses_prev = [fk_pose_prev, fk_pose_prev_prev, fk_pose_prev_prev_prev]
+            position_prev = [position_prev, position_prev_prev, position_prev_prev_prev]
+            
             # compute losses
-            recn_loss = (
-                torch.norm(position - fk_pose, dim=-1) * mask
-            ).sum() / mask.sum()
-            vel_loss = (torch.norm(v_t - v_t_pred, dim=-1) * mask).sum() / mask.sum()
-            acc_loss = (
-                torch.norm(a_t_pred - a_t_minus_1_pred, dim=-1) * mask
-            ).sum() / mask.sum()
-            recn_loss_root_children = (
-                torch.norm(position - fk_pose, dim=-1) * children_mask
-            ).sum() / children_mask.sum()
-            d6_loss = (torch.norm(d6 - y_pred, dim=-1) * mask).sum() / mask.sum()
-            kl_loss = -0.5 * torch.sum(1 + log_var - mean.pow(2) - log_var.exp())
+            train_losses = Losses(fk_pose = fk_pose,
+                                  position = position,
+                                  mask = mask,
+                                  fk_poses_prev = fk_poses_prev,
+                                  position_prev = position_prev,
+                                  children_mask = children_mask,
+                                  d6 = d6,
+                                  log_var = log_var,
+                                  mean = mean,
+                                  frame_time = frame_time,
+                                  mode = "train",
+            ).losses()
 
+            
             loss = (
-                recn_loss
-                + (1e-6 * kl_loss)
-                + 10 * recn_loss_root_children
-                + d6_loss
-                + val_loss_scale * vel_loss
-                + acc_loss_scale * acc_loss
+                train_losses["recn_loss"]
+                + (1e-6 * train_losses["kl_loss"])
+                + 10 * train_losses["recn_loss_root_children"]
+                + train_losses["d6_loss"]
+                + val_loss_scale * train_losses["vel_loss"]
+                + acc_loss_scale * train_losses["acc_loss"]
             )
 
             loss = loss.mean()
@@ -219,17 +215,17 @@ def trainer(
             torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
 
             optimizer.step()
-            losses.append(recn_loss.item())
+            losses.append(train_losses["recn_loss"].item())
             epoch_loss.append(losses[-1])
 
             pbar.set_description(
                 f"Epoch [{epoch+1}/{num_epochs}], Loss: {np.mean(epoch_loss[-10:])}"
             )
 
-            wandb.log({"loss": recn_loss.item(),
-                       "angle loss": d6_loss.item(),
-                       "velocity loss": vel_loss.item(),
-                       "accelaration loss": acc_loss.item(),
+            wandb.log({"loss": train_losses["recn_loss"].item(),
+                       "angle loss": train_losses["d6_loss"].item(),
+                       "velocity loss": train_losses["vel_loss"].item(),
+                       "accelaration loss": train_losses["acc_loss"].item(),
             })
 
             lr_scheduler.step()
@@ -253,11 +249,14 @@ def trainer(
                 )
                 fk_pose = fk_pose - fk_pose[..., 0:1, :]
 
-                val_loss = (
-                    torch.norm(position - fk_pose, dim=-1) * mask
-                ).sum() / mask.sum()
+                # compute losses
+                val_losses = Losses(fk_pose = fk_pose,
+                                    position = position,
+                                    mask = mask,
+                                    mode = "validation",
+                ).losses()
 
-                val_losses.append(val_loss.item())
+                val_losses.append(val_losses["recn_loss"].item())
 
         if np.mean(val_losses) < prev_best_val_loss:
             prev_best_val_loss = np.mean(val_losses)

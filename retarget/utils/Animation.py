@@ -218,6 +218,7 @@ class Animation:
 
             position = torch.Tensor(position)
             position = position - position[0]
+            position_x = position.clone()
 
             rotation = torch.Tensor(rotation)
             d6 = torch.Tensor(d6)
@@ -227,7 +228,7 @@ class Animation:
             parents = torch.LongTensor(self.parents)
             edges = torch.LongTensor(self.edges.T)
 
-            features = torch.cat([d6, position], dim=-1)
+            features = torch.cat([d6, position_x], dim=-1)
 
             data.append(
                 Data(

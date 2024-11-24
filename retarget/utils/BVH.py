@@ -282,7 +282,7 @@ def load(filename, start=None, end=None, order=None, world=False, ground_feet=Fa
 
     if ground_feet:
         positions *= factor
-    
+
     rotations = Quaternions.from_euler(np.radians(rotations), order=order, world=world)
 
     return (

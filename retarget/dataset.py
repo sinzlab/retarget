@@ -68,9 +68,9 @@ class MixamoDataset(Dataset):
         # Initialize empty list to put in the previous frames of a given frame
         # This is used for the velocity loss
         # Also Initialize empty list with frame times between frames
-        #self.data_prev[idx] stores the offset frame from the original frame. 
+        # self.data_prev[idx] stores the offset frame from the original frame.
         if mode == "train":
-            self.data_prev = [[],[],[]]
+            self.data_prev = [[], [], []]
             self.time = []
 
         for animation, time in zip(self.animations, self.frame_time):
@@ -126,11 +126,15 @@ class MixamoDataset(Dataset):
 
     def __getitem__(self, idx):
         item = self.data[idx].clone()
+
+        if self.ground_feet:
+            trajectory = self.trajectory[idx]
+
         if self.mode == "train":
 
             # If the mode is "train", then also define the frame time
             frame_time = self.time[idx]
-            
+
             # If the mode is "train", then also define the previous frame
             item_prev = self.data[self.data_prev[0][idx]].clone()
 
@@ -165,8 +169,9 @@ class MixamoDataset(Dataset):
             t_pose = AnimationStructure.t_pose(scaled_offsets, edges)
 
             item.position = torch.Tensor(position)
+            item.x[:, 6:] = torch.Tensor(position).clone()
             item.offsets = torch.Tensor(scaled_offsets)
-            item.t_pose = torch.Tensor(t_pose)
+            item.pos = torch.Tensor(t_pose)
 
             # For previous frame
             parents_prev = item_prev.parents.numpy()
@@ -181,8 +186,9 @@ class MixamoDataset(Dataset):
             t_pose_prev = AnimationStructure.t_pose(scaled_offsets_prev, edges_prev)
 
             item_prev.position = torch.Tensor(position_prev)
+            item_prev.x[:, 6:] = torch.Tensor(position_prev).clone()
             item_prev.offsets = torch.Tensor(scaled_offsets_prev)
-            item_prev.t_pose = torch.Tensor(t_pose_prev)
+            item_prev.pos = torch.Tensor(t_pose_prev)
 
             # For previous previous frame
             parents_prev_prev = item_prev_prev.parents.numpy()
@@ -201,8 +207,9 @@ class MixamoDataset(Dataset):
             )
 
             item_prev_prev.position = torch.Tensor(position_prev_prev)
+            item_prev_prev.x[:, 6:] = torch.Tensor(position_prev_prev).clone()
             item_prev_prev.offsets = torch.Tensor(scaled_offsets_prev_prev)
-            item_prev_prev.t_pose = torch.Tensor(t_pose_prev_prev)
+            item_prev_prev.pos = torch.Tensor(t_pose_prev_prev)
 
             # For previous previous previous frame
             parents_prev_prev_prev = item_prev_prev_prev.parents.numpy()
@@ -221,18 +228,19 @@ class MixamoDataset(Dataset):
             )
 
             item_prev_prev_prev.position = torch.Tensor(position_prev_prev_prev)
+            item_prev_prev_prev.x[:, 6:] = torch.Tensor(position_prev_prev_prev).clone()
             item_prev_prev_prev.offsets = torch.Tensor(scaled_offsets_prev_prev_prev)
-            item_prev_prev_prev.t_pose = torch.Tensor(t_pose_prev_prev_prev)
+            item_prev_prev_prev.pos = torch.Tensor(t_pose_prev_prev_prev)
 
-            #Store all the previous items in one list.
+            # Store all the previous items in one list.
             previous_items = [item_prev, item_prev_prev, item_prev_prev_prev]
 
             if self.ground_feet:
-                return item, previous_items, frame_time, self.trajectory[idx]
-            
+                return item, previous_items, frame_time, trajectory
+
             return item, previous_items, frame_time
 
         if self.ground_feet:
-            return item, self.trajectory[idx]
+            return item, trajectory
 
         return item

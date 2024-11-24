@@ -38,18 +38,19 @@ def trainer(
     device="cuda",
     num_epochs=500,
     val_loss_scale=1 / 30,
-    acc_loss_scale=(1 / 30) ** 2,
+    acc_loss_scale=0.00001,
     resume_from_epoch=None,
     resume_checkpoint=None,
 ):
 
     wandb_name = wandb.run.name
 
+    model = model.to(device)
+
     optimizer = torch.optim.AdamW(model.parameters(), lr=1e-3, weight_decay=0.001)
+
     if resume_checkpoint:
         optimizer.load_state_dict(resume_checkpoint["optimizer"])
-
-    model = model.to(device)
 
     losses = []
     prev_best_val_loss = 1e6
@@ -179,25 +180,26 @@ def trainer(
             item, idx = torch.where(edge_indexs[:, :, 0] == 0)
             children_mask[item, edge_indexs[item, idx, 1]] = 1
 
-            #Put previous predicted/ ground truth joint position into one list
+            # Put previous predicted/ ground truth joint position into one list
             fk_poses_prev = [fk_pose_prev, fk_pose_prev_prev, fk_pose_prev_prev_prev]
             position_prev = [position_prev, position_prev_prev, position_prev_prev_prev]
-            
-            # compute losses
-            train_losses = Losses(fk_pose = fk_pose,
-                                  position = position,
-                                  mask = mask,
-                                  fk_poses_prev = fk_poses_prev,
-                                  position_prev = position_prev,
-                                  children_mask = children_mask,
-                                  d6 = d6,
-                                  log_var = log_var,
-                                  mean = mean,
-                                  frame_time = frame_time,
-                                  mode = "train",
-            ).losses()
 
-            
+            # compute losses
+            train_losses = Losses(
+                fk_pose=fk_pose,
+                position=position,
+                mask=mask,
+                fk_poses_prev=fk_poses_prev,
+                position_prev=position_prev,
+                children_mask=children_mask,
+                d6=d6,
+                d6_pred=y_pred,
+                log_var=log_var,
+                mean=mean,
+                frame_time=frame_time,
+                mode="train",
+            ).losses
+
             loss = (
                 train_losses["recn_loss"]
                 + (1e-6 * train_losses["kl_loss"])
@@ -222,11 +224,14 @@ def trainer(
                 f"Epoch [{epoch+1}/{num_epochs}], Loss: {np.mean(epoch_loss[-10:])}"
             )
 
-            wandb.log({"loss": train_losses["recn_loss"].item(),
-                       "angle loss": train_losses["d6_loss"].item(),
-                       "velocity loss": train_losses["vel_loss"].item(),
-                       "accelaration loss": train_losses["acc_loss"].item(),
-            })
+            wandb.log(
+                {
+                    "loss": train_losses["recn_loss"].item(),
+                    "angle loss": train_losses["d6_loss"].item(),
+                    "velocity loss": train_losses["vel_loss"].item(),
+                    "accelaration loss": train_losses["acc_loss"].item(),
+                }
+            )
 
             lr_scheduler.step()
 
@@ -250,13 +255,14 @@ def trainer(
                 fk_pose = fk_pose - fk_pose[..., 0:1, :]
 
                 # compute losses
-                val_losses = Losses(fk_pose = fk_pose,
-                                    position = position,
-                                    mask = mask,
-                                    mode = "validation",
-                ).losses()
+                val_loss = Losses(
+                    fk_pose=fk_pose,
+                    position=position,
+                    mask=mask,
+                    mode="validation",
+                ).losses
 
-                val_losses.append(val_losses["recn_loss"].item())
+                val_losses.append(val_loss["recn_loss"].item())
 
         if np.mean(val_losses) < prev_best_val_loss:
             prev_best_val_loss = np.mean(val_losses)
@@ -273,7 +279,7 @@ def trainer(
             },
             f"./models/local/{wandb_name}_latest_checkpoint.tar",
         )
-        
+
         wandb.save(f"./models/local/{wandb_name}_latest_checkpoint.tar")
 
         print(

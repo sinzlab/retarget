@@ -202,11 +202,11 @@ def trainer(
             kl_loss = -0.5 * torch.sum(1 + log_var - mean.pow(2) - log_var.exp())
 
             loss = (
-                recn_loss
+                0.01 * recn_loss
                 + (1e-6 * kl_loss)
                 + 10 * recn_loss_root_children
-                + d6_loss
-                + val_loss_scale * vel_loss
+                + 10 * d6_loss
+                + 10 * val_loss_scale * vel_loss
                 + acc_loss_scale * acc_loss
             )
 

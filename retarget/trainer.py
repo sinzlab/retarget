@@ -202,11 +202,11 @@ def trainer(
             kl_loss = -0.5 * torch.sum(1 + log_var - mean.pow(2) - log_var.exp())
 
             loss = (
-                0.01 * recn_loss
+                100 * recn_loss
                 + (1e-6 * kl_loss)
                 + 10 * recn_loss_root_children
-                + 10 * d6_loss
-                + 10 * val_loss_scale * vel_loss
+                + d6_loss
+                + val_loss_scale * vel_loss
                 + acc_loss_scale * acc_loss
             )
 
@@ -225,10 +225,10 @@ def trainer(
                 f"Epoch [{epoch+1}/{num_epochs}], Loss: {np.mean(epoch_loss[-10:])}"
             )
 
-            wandb.log({"loss": recn_loss.item(),
-                       "velocity_loss": vel_loss.item(),
+            wandb.log({"loss": 170 * recn_loss.item(),
+                       "velocity_loss":170 * vel_loss.item(),
                        "d6_loss": d6_loss.item(),
-                       "jerk_loss": acc_loss.item(),
+                       "jerk_loss": 170 * acc_loss.item(),
             })
 
             lr_scheduler.step()
@@ -276,4 +276,4 @@ def trainer(
         print(
             f"Epoch [{epoch+1}/{num_epochs}], Batch [{batch_idx} / {n_batches}] Loss: {np.mean(epoch_loss)} | val_losses: {np.mean(val_losses)}"
         )
-        wandb.log({"mean loss": np.mean(epoch_loss), "val_loss": np.mean(val_losses)})
+        wandb.log({"mean loss": 170 * np.mean(epoch_loss), "val_loss": 170 * np.mean(val_losses)})

@@ -204,9 +204,9 @@ def trainer(
             loss = (
                 100 * recn_loss
                 + (1e-6 * kl_loss)
-                + 10 * recn_loss_root_children
+                + 100 * recn_loss_root_children
                 + d6_loss
-                + val_loss_scale * vel_loss
+                + 10*val_loss_scale * vel_loss
                 + acc_loss_scale * acc_loss
             )
 

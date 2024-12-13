@@ -18,13 +18,19 @@ if __name__ == "__main__":
 
     #Load pretrained model
     print("LOAD PRETRAINED MODEL")
-    model = TransformerAutoEncoder.from_pretrained('local/electric-deluge-191_best_model.pt')
+    model_name = "rich-mountain-195"
+    model = TransformerAutoEncoder.from_pretrained(f'local/{model_name}_best_model.pt')
     tokenizer = Tokenizer()
 
-    #animation, new_names, _ = load('/home/kia/MOTION_ESTIMATION/DATA_BANDAI_NAMCO/test/val_data/bandai-namco/dataset-2_run_masculine_006.bvh',ground_feet=False)
-    animation, new_names, _ = load('/user/kyang2/u12303/skip-dataset/train/Amy/Capoeira.bvh',ground_feet=False)
+    #string = "Capoeira"
 
-    #animation, new_names, _ = load('/user/kyang2/u12303/skip-dataset/test/bandai-namco/dataset-1_bow_old_001.bvh',ground_feet=False)
+    string = "bow"
+    #animation, new_names, _ = load('/home/kia/MOTION_ESTIMATION/DATA_BANDAI_NAMCO/test/val_data/bandai-namco/dataset-2_run_masculine_006.bvh',ground_feet=False)
+
+    if string == "Capoeira":
+        animation, new_names, _ = load('/user/kyang2/u12303/skip-dataset/train/Amy/Capoeira.bvh',ground_feet=False)
+    else:
+        animation, new_names, _ = load('/user/kyang2/u12303/skip-dataset/test/bandai-namco/dataset-1_bow_old_001.bvh',ground_feet=False)
 
     #
     animation.positions[...,:,:] -= animation.positions[...,0:1,:]
@@ -54,7 +60,9 @@ if __name__ == "__main__":
                            animation.parents,
     )
 
-    #save("bow_electric-deluge.bvh", recon_anim)
-    save("Capoeira_electric-deluge.bvh", recon_anim)
+    if string == "Capoeira":
+        save(f"Capoeira_{model_name}.bvh", recon_anim)
+    else:
+        save(f"bow_{model_name}.bvh", recon_anim)
     #save("bow_no_traj_truth.bvh",animation)
     #save("Capoeira_no_traj_truth.bvh",animation)

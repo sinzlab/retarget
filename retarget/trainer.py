@@ -50,7 +50,7 @@ def trainer(
 
     if resume_checkpoint:
         optimizer.load_state_dict(resume_checkpoint["optimizer"])
-        
+    fps = 1/30    
     losses = []
     prev_best_val_loss = 1e6
     lr_scheduler = CosineAnnealingWarmupRestarts(
@@ -178,14 +178,14 @@ def trainer(
             children_mask[item, edge_indexs[item, idx, 1]] = 1
 
             # Calculate velocities for time steps t, t-1, t-2 for jerk/velocity loss
-            v_t = (position - position_prev) / frame_time
-            v_t_pred = (fk_pose - fk_pose_prev) / frame_time
-            v_t_minus_1_pred = (fk_pose_prev - fk_pose_prev_prev) / frame_time
-            v_t_minus_2_pred = (fk_pose_prev_prev - fk_pose_prev_prev_prev) / frame_time
+            v_t = (position - position_prev) / fps
+            v_t_pred = (fk_pose - fk_pose_prev) / fps
+            v_t_minus_1_pred = (fk_pose_prev - fk_pose_prev_prev) / fps
+            v_t_minus_2_pred = (fk_pose_prev_prev - fk_pose_prev_prev_prev) / fps
 
             # Calculate acceleration for time steps t and t-1 for jerk loss
-            a_t_pred = (v_t_pred - v_t_minus_1_pred) / frame_time
-            a_t_minus_1_pred = (v_t_minus_1_pred - v_t_minus_2_pred) / frame_time
+            a_t_pred = (v_t_pred - v_t_minus_1_pred) / fps**2
+            a_t_minus_1_pred = (v_t_minus_1_pred - v_t_minus_2_pred) / fps**2
 
             # compute losses
             recn_loss = (
@@ -201,12 +201,24 @@ def trainer(
             d6_loss = (torch.norm(d6 - y_pred, dim=-1) * mask).sum() / mask.sum()
             kl_loss = -0.5 * torch.sum(1 + log_var - mean.pow(2) - log_var.exp())
 
+            #recn_loss_sq = (
+            #    torch.norm(position - fk_pose, dim=-1)**2 * mask
+            #).sum() / mask.sum()
+            #vel_loss_sq = (torch.norm(v_t - v_t_pred, dim=-1)**2 * mask).sum() / mask.sum()
+            #acc_loss_sq = (
+            #    torch.norm(a_t_pred - a_t_minus_1_pred, dim=-1)**2 * mask
+            #).sum() / mask.sum()
+            #recn_loss_root_children_sq = (
+            #    torch.norm(position - fk_pose, dim=-1)**2 * children_mask
+            #).sum() / children_mask.sum()
+            #d6_loss_sq = (torch.norm(d6 - y_pred, dim=-1)**2 * mask).sum() / mask.sum()
+            
             loss = (
                 100 * recn_loss
                 + (1e-6 * kl_loss)
                 + 100 * recn_loss_root_children
                 + d6_loss
-                + 10*val_loss_scale * vel_loss
+                + val_loss_scale * vel_loss
                 + acc_loss_scale * acc_loss
             )
 

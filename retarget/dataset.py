@@ -75,7 +75,11 @@ class MixamoDataset(Dataset):
             self.time = []
 
         for animation, time in zip(self.animations, self.frame_time):
-            animation_graphs = animation.as_graph()
+            if 1/time > 100:
+                animation_graphs = animation.as_graph(stride=4)
+            else:
+                animation_graphs = animation.as_graph()
+
             n_graphs = len(animation_graphs)
             total_frames_currently = len(self.data)
             

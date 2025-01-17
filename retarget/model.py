@@ -98,7 +98,7 @@ class TransformerAutoEncoder(nn.Module):
     ):
         super(TransformerAutoEncoder, self).__init__()
         self.encoder = TransformerEncoder(
-            d_input=d_input, d_model=d_model, nhead=nhead, num_layers=num_layers
+            d_input=d_input + 6, d_model=d_model, nhead=nhead, num_layers=num_layers
         )
         self.decoder = TransformerDecoder(d_input=d_input - 3, d_model=d_model)
 

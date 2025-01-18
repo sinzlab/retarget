@@ -260,7 +260,7 @@ class MixamoDataset(Dataset):
                 Quaternions(rotation_prev_prev_prev_prev[None, ...]),
             )[0]
 
-            t_pose_prev_prev_prev = AnimationStructure.t_pose(
+            t_pose_prev_prev_prev_prev = AnimationStructure.t_pose(
                 scaled_offsets_prev_prev_prev_prev, edges_prev_prev_prev_prev
             )
             
@@ -270,15 +270,15 @@ class MixamoDataset(Dataset):
             item_prev_prev_prev_prev.pos = torch.Tensor(t_pose_prev_prev_prev_prev)
 
             #Set the scaled skeletons new velocity and previous frame
-            item.x[9:12] = torch.Tensor(position_prev).clone()
-            item_prev.x[9:12] = torch.Tensor(position_prev_prev).clone()
-            item_prev_prev.x[9:12] = torch.Tensor(position_prev_prev_prev).clone()
-            item_prev_prev_prev.x[9:12] = torch.Tensor(position_prev_prev_prev_prev).clone()
+            item.x[:,9:12] = torch.Tensor(position_prev).clone()
+            item_prev.x[:,9:12] = torch.Tensor(position_prev_prev).clone()
+            item_prev_prev.x[:,9:12] = torch.Tensor(position_prev_prev_prev).clone()
+            item_prev_prev_prev.x[:,9:12] = torch.Tensor(position_prev_prev_prev_prev).clone()
 
-            item.x[12:] = torch.Tensor(position - position_prev).clone()
-            item_prev.x[12:] = torch.Tensor(position_prev - position_prev_prev).clone()
-            item_prev_prev.x[12:] = torch.Tensor(position_prev_prev - position_prev_prev_prev).clone()
-            item_prev_prev_prev.x[12:] = torch.Tensor(position_prev_prev_prev - position_prev_prev_prev_prev).clone()
+            item.x[:,12:] = torch.Tensor(position - position_prev).clone()
+            item_prev.x[:,12:] = torch.Tensor(position_prev - position_prev_prev).clone()
+            item_prev_prev.x[:,12:] = torch.Tensor(position_prev_prev - position_prev_prev_prev).clone()
+            item_prev_prev_prev.x[:,12:] = torch.Tensor(position_prev_prev_prev - position_prev_prev_prev_prev).clone()
             
             return item, item_prev, item_prev_prev, item_prev_prev_prev, frame_time
         

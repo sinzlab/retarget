@@ -184,8 +184,8 @@ def trainer(
             v_t_minus_2_pred = (fk_pose_prev_prev - fk_pose_prev_prev_prev) / fps
 
             # Calculate acceleration for time steps t and t-1 for jerk loss
-            a_t_pred = (v_t_pred - v_t_minus_1_pred) / fps**2
-            a_t_minus_1_pred = (v_t_minus_1_pred - v_t_minus_2_pred) / fps**2
+            a_t_pred = (v_t_pred - v_t_minus_1_pred) / fps
+            a_t_minus_1_pred = (v_t_minus_1_pred - v_t_minus_2_pred) / fps
 
             # compute losses
             recn_loss = (
@@ -217,7 +217,7 @@ def trainer(
                 100 * recn_loss
                 + (1e-6 * kl_loss)
                 + 100 * recn_loss_root_children
-                + d6_loss
+                + 5 * d6_loss
                 + val_loss_scale * vel_loss
                 + acc_loss_scale * acc_loss
             )

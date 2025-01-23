@@ -46,7 +46,7 @@ def trainer(
 
     model = model.to(device)
 
-    optimizer = torch.optim.AdamW(model.parameters(), lr=1e-3, weight_decay=0.001)
+    optimizer = torch.optim.AdamW(model.parameters(), lr=1e-2, weight_decay=0.0001)
 
     if resume_checkpoint:
         optimizer.load_state_dict(resume_checkpoint["optimizer"])
@@ -57,7 +57,7 @@ def trainer(
         optimizer,
         first_cycle_steps=len(dataloader),
         cycle_mult=1,
-        max_lr=1e-3,
+        max_lr=1e-2,
         min_lr=1e-6,
         warmup_steps=200,
         gamma=1e-1 ** (1 / num_epochs),
@@ -178,14 +178,14 @@ def trainer(
             children_mask[item, edge_indexs[item, idx, 1]] = 1
 
             # Calculate velocities for time steps t, t-1, t-2 for jerk/velocity loss
-            v_t = (position - position_prev) / fps
-            v_t_pred = (fk_pose - fk_pose_prev) / fps
-            v_t_minus_1_pred = (fk_pose_prev - fk_pose_prev_prev) / fps
-            v_t_minus_2_pred = (fk_pose_prev_prev - fk_pose_prev_prev_prev) / fps
+            v_t = (position - position_prev)
+            v_t_pred = (fk_pose - fk_pose_prev) 
+            v_t_minus_1_pred = (fk_pose_prev - fk_pose_prev_prev) 
+            v_t_minus_2_pred = (fk_pose_prev_prev - fk_pose_prev_prev_prev) 
 
             # Calculate acceleration for time steps t and t-1 for jerk loss
-            a_t_pred = (v_t_pred - v_t_minus_1_pred) / fps
-            a_t_minus_1_pred = (v_t_minus_1_pred - v_t_minus_2_pred) / fps
+            a_t_pred = (v_t_pred - v_t_minus_1_pred) / fps**3
+            a_t_minus_1_pred = (v_t_minus_1_pred - v_t_minus_2_pred) / fps**3
 
             # compute losses
             recn_loss = (
@@ -201,25 +201,25 @@ def trainer(
             d6_loss = (torch.norm(d6 - y_pred, dim=-1) * mask).sum() / mask.sum()
             kl_loss = -0.5 * torch.sum(1 + log_var - mean.pow(2) - log_var.exp())
 
-            #recn_loss_sq = (
-            #    torch.norm(position - fk_pose, dim=-1)**2 * mask
-            #).sum() / mask.sum()
-            #vel_loss_sq = (torch.norm(v_t - v_t_pred, dim=-1)**2 * mask).sum() / mask.sum()
-            #acc_loss_sq = (
-            #    torch.norm(a_t_pred - a_t_minus_1_pred, dim=-1)**2 * mask
-            #).sum() / mask.sum()
-            #recn_loss_root_children_sq = (
-            #    torch.norm(position - fk_pose, dim=-1)**2 * children_mask
-            #).sum() / children_mask.sum()
-            #d6_loss_sq = (torch.norm(d6 - y_pred, dim=-1)**2 * mask).sum() / mask.sum()
+            recn_loss_same = (
+                torch.nn.MSELoss()(position * mask[:,:,None] * 170,fk_pose * mask[:,:,None] * 170)
+            )
+            vel_loss_same = (torch.nn.MSELoss()(v_t*mask[:,:,None]*170, v_t_pred * mask[:,:,None] * 170))
+            acc_loss_same = (
+                (torch.norm(a_t_pred * 170 - a_t_minus_1_pred * 170, dim=-1) * acc_loss_scale) **2 * mask
+            ).sum() / mask.sum()
+            recn_loss_root_children_same = (
+                torch.nn.MSELoss()(position * 170 * children_mask[:,:,None] , fk_pose * 170 * children_mask[:,:,None])
+            )
+            d6_loss_same = (torch.nn.MSELoss()(d6 * mask.unsqueeze(-1), y_pred * mask.unsqueeze(-1)))
             
             loss = (
-                100 * recn_loss
+                0.1 * recn_loss_same
                 + (1e-6 * kl_loss)
-                + 100 * recn_loss_root_children
-                + 5 * d6_loss
-                + val_loss_scale * vel_loss
-                + acc_loss_scale * acc_loss
+                + 0.1 * recn_loss_root_children_same
+                + 5 * d6_loss_same
+                + vel_loss_same
+                + 0.2 * acc_loss_same
             )
 
             loss = loss.mean()
@@ -238,9 +238,9 @@ def trainer(
             )
 
             wandb.log({"loss": 170 * recn_loss.item(),
-                       "velocity_loss":170 * vel_loss.item(),
+                       "velocity_loss":170 * vel_loss.item() / fps,
                        "d6_loss": d6_loss.item(),
-                       "jerk_loss": 170 * acc_loss.item(),
+                       "jerk_loss": 170 * acc_loss.item()*fps,
             })
 
             lr_scheduler.step()

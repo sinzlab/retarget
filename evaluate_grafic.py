@@ -18,7 +18,7 @@ if __name__ == "__main__":
 
     #Load pretrained model
     print("LOAD PRETRAINED MODEL")
-    model_name = "kind-gorge-228"
+    model_name = "dazzling-capybara-237"
     checkpoint = torch.load(f"./models/local/{model_name}_latest_checkpoint.tar", map_location = "cpu")
     #model = TransformerAutoEncoder.from_pretrained(f'local/{model_name}_best_model.pt')
     model = TransformerAutoEncoder.from_pretrained(checkpoint["epoch"], checkpoint = checkpoint)

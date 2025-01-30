@@ -23,7 +23,7 @@ ordermap = {
 }
 
 
-def load(filename, start=None, end=None, order=None, world=False):
+def load(filename, start=None, end=None, order=None, world=False, ground_feet=False):
     """
     Reads a BVH file and constructs an animation
 
@@ -272,12 +272,16 @@ def load(filename, start=None, end=None, order=None, world=False):
     parents = new_parents
 
     std = offsets.std()
+    std = np.floor(std) if abs(std) > 0.5 else std
     # get the closest maginute of 10, i.e. 0.1, 1, 10, 100, 1000, ...
     magnitude = 10 ** np.floor(np.log10(std))
 
     # magintude should be 10
     factor = 10 / magnitude
     offsets *= factor
+
+    if ground_feet:
+        positions *= factor
 
     rotations = Quaternions.from_euler(np.radians(rotations), order=order, world=world)
 

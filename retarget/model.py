@@ -119,7 +119,7 @@ class TransformerAutoEncoder(nn.Module):
         return mean + eps * std
 
     @classmethod
-    def from_pretrained(cls, artifact):
+    def from_pretrained(cls, artifact, checkpoint=None):
         d_model = 64
         d_input = 9
         nhead = 8
@@ -127,6 +127,10 @@ class TransformerAutoEncoder(nn.Module):
         model = cls(
             d_input=d_input, d_model=d_model, nhead=nhead, num_layers=num_layers
         )
+
+        if checkpoint:
+            model.load_state_dict(checkpoint["model"])
+            return model
 
         state_dict = model._get_state_dict(artifact, use_cache=True)
 

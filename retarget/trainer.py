@@ -14,6 +14,7 @@ import numpy as np
 import torch
 from tqdm import tqdm
 
+from retarget.losses import Losses
 from retarget.model import graph_to_batch, mask_from_batch
 from retarget.utils.Animation import fk_for_batch
 from retarget.utils.Quaternions_old import d6_2_rotmat
@@ -37,11 +38,19 @@ def trainer(
     device="cuda",
     num_epochs=500,
     val_loss_scale=1 / 30,
+    acc_loss_scale=0.00001,
     resume_from_epoch=None,
+    resume_checkpoint=None,
 ):
-    optimizer = torch.optim.AdamW(model.parameters(), lr=1e-3, weight_decay=0.001)
+
+    wandb_name = wandb.run.name
 
     model = model.to(device)
+
+    optimizer = torch.optim.AdamW(model.parameters(), lr=1e-3, weight_decay=0.001)
+
+    if resume_checkpoint:
+        optimizer.load_state_dict(resume_checkpoint["optimizer"])
 
     losses = []
     prev_best_val_loss = 1e6
@@ -55,6 +64,10 @@ def trainer(
         gamma=1e-1 ** (1 / num_epochs),
         last_epoch=-1,
     )
+
+    if resume_checkpoint:
+        lr_scheduler.load_state_dict(resume_checkpoint["scheduler"])
+
     for epoch in range(resume_from_epoch, num_epochs):
         n_batches = len(dataloader)
         batch_idx = 0
@@ -62,11 +75,17 @@ def trainer(
         pbar = tqdm(dataloader)
         # lr_scheduler = get_cosine_schedule_with_warmup(optimizer, num_warmup_steps=200, num_training_steps=len(dataloader))
         # lr_scheduler = get_cosine_with_hard_restarts_schedule_with_warmup(optimizer, num_warmup_steps=200, num_training_steps=len(dataloader) * num_epochs, num_cycles=num_epochs)
-        for batch, batch_prev, frame_time in pbar:
+        for (
+            batch,
+            previous_batches,
+            frame_time,
+        ) in pbar:
             batch_idx += 1
 
             batch = batch.to(device)
-            batch_prev = batch_prev.to(device)
+            batch_prev = previous_batches[0].to(device)
+            batch_prev_prev = previous_batches[1].to(device)
+            batch_prev_prev_prev = previous_batches[2].to(device)
             frame_time = frame_time[:, None, None].to(device)
 
             # Create mask, position and d6 for original frame
@@ -79,6 +98,23 @@ def trainer(
             position_prev = graph_to_batch(batch_prev.position, mask_prev)
             d6_prev = graph_to_batch(batch_prev.d6, mask_prev)
 
+            # Create mask, position and d6 for previous previous frame
+            mask_prev_prev = mask_from_batch(batch_prev_prev)
+            position_prev_prev = graph_to_batch(
+                batch_prev_prev.position, mask_prev_prev
+            )
+            d6_prev_prev = graph_to_batch(batch_prev_prev.d6, mask_prev_prev)
+
+            # Create mask, position and d6 for previous previous previous frame
+            mask_prev_prev_prev = mask_from_batch(batch_prev_prev_prev)
+            position_prev_prev_prev = graph_to_batch(
+                batch_prev_prev_prev.position, mask_prev_prev_prev
+            )
+            d6_prev_prev_prev = graph_to_batch(
+                batch_prev_prev_prev.d6, mask_prev_prev_prev
+            )
+
+            # Set optimiser grad to zero
             optimizer.zero_grad()
 
             # Create prediction for original frame
@@ -87,7 +123,7 @@ def trainer(
             )
 
             fk_pose, edge_indexs = fk_for_batch(
-                batch, y_pred, quater=False, rotations_fmt="d6"
+                batch, y_pred, quater=False, rotations_fmt="d6", device=device
             )
             fk_pose = fk_pose - fk_pose[..., 0:1, :]
 
@@ -97,9 +133,45 @@ def trainer(
             )
 
             fk_pose_prev, edge_indexs_prev = fk_for_batch(
-                batch_prev, y_pred_prev, quater=False, rotations_fmt="d6"
+                batch_prev, y_pred_prev, quater=False, rotations_fmt="d6", device=device
             )
             fk_pose_prev = fk_pose_prev - fk_pose_prev[..., 0:1, :]
+
+            # Create prediction for previous previous frame
+            y_pred_prev_prev, mean_prev_prev, log_var_prev_prev = model(
+                batch_prev_prev.x,
+                batch_prev_prev.pos,
+                batch_prev_prev.edge_index,
+                mask=mask_prev_prev,
+            )
+
+            fk_pose_prev_prev, edge_indexs_prev_prev = fk_for_batch(
+                batch_prev_prev,
+                y_pred_prev_prev,
+                quater=False,
+                rotations_fmt="d6",
+                device=device,
+            )
+            fk_pose_prev_prev = fk_pose_prev_prev - fk_pose_prev_prev[..., 0:1, :]
+
+            # Create prediction for previous previous previousframe
+            y_pred_prev_prev_prev, mean_prev_prev_prev, log_var_prev_prev_prev = model(
+                batch_prev_prev_prev.x,
+                batch_prev_prev_prev.pos,
+                batch_prev_prev_prev.edge_index,
+                mask=mask_prev_prev_prev,
+            )
+
+            fk_pose_prev_prev_prev, edge_indexs_prev_prev_prev = fk_for_batch(
+                batch_prev_prev_prev,
+                y_pred_prev_prev_prev,
+                quater=False,
+                rotations_fmt="d6",
+                device=device,
+            )
+            fk_pose_prev_prev_prev = (
+                fk_pose_prev_prev_prev - fk_pose_prev_prev_prev[..., 0:1, :]
+            )
 
             # create a boolean mask for the children of the root (idx 0)
             children_mask = torch.zeros(
@@ -108,32 +180,35 @@ def trainer(
             item, idx = torch.where(edge_indexs[:, :, 0] == 0)
             children_mask[item, edge_indexs[item, idx, 1]] = 1
 
-            # compute losses
-            recn_loss = (
-                torch.norm(position - fk_pose, dim=-1) * mask
-            ).sum() / mask.sum()
-            vel_loss = (
-                torch.norm(
-                    ((position - position_prev) - (fk_pose - fk_pose_prev))
-                    / frame_time,
-                    dim=-1,
-                )
-                * mask
-            ).sum() / mask.sum()
-            recn_loss_root_children = (
-                torch.norm(position - fk_pose, dim=-1) * children_mask
-            ).sum() / children_mask.sum()
-            d6_loss = (torch.norm(d6 - y_pred, dim=-1) * mask).sum() / mask.sum()
+            # Put previous predicted/ ground truth joint position into one list
+            fk_poses_prev = [fk_pose_prev, fk_pose_prev_prev, fk_pose_prev_prev_prev]
+            position_prev = [position_prev, position_prev_prev, position_prev_prev_prev]
 
-            kl_loss = -0.5 * torch.sum(1 + log_var - mean.pow(2) - log_var.exp())
+            # compute losses
+            train_losses = Losses(
+                fk_pose=fk_pose,
+                position=position,
+                mask=mask,
+                fk_poses_prev=fk_poses_prev,
+                position_prev=position_prev,
+                children_mask=children_mask,
+                d6=d6,
+                d6_pred=y_pred,
+                log_var=log_var,
+                mean=mean,
+                frame_time=frame_time,
+                mode="train",
+            ).losses
 
             loss = (
-                recn_loss
-                + (1e-6 * kl_loss)
-                + 10 * recn_loss_root_children
-                + d6_loss
-                + val_loss_scale * vel_loss
+                train_losses["recn_loss"]
+                + (1e-6 * train_losses["kl_loss"])
+                + 10 * train_losses["recn_loss_root_children"]
+                + train_losses["d6_loss"]
+                + val_loss_scale * train_losses["vel_loss"]
+                + acc_loss_scale * train_losses["acc_loss"]
             )
+
             loss = loss.mean()
 
             loss.backward()
@@ -142,14 +217,21 @@ def trainer(
             torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
 
             optimizer.step()
-            losses.append(recn_loss.item())
+            losses.append(train_losses["recn_loss"].item())
             epoch_loss.append(losses[-1])
 
             pbar.set_description(
                 f"Epoch [{epoch+1}/{num_epochs}], Loss: {np.mean(epoch_loss[-10:])}"
             )
 
-            wandb.log({"loss": recn_loss.item()})
+            wandb.log(
+                {
+                    "loss": train_losses["recn_loss"].item(),
+                    "angle loss": train_losses["d6_loss"].item(),
+                    "velocity loss": train_losses["vel_loss"].item(),
+                    "accelaration loss": train_losses["acc_loss"].item(),
+                }
+            )
 
             lr_scheduler.step()
 
@@ -168,20 +250,37 @@ def trainer(
                 )
 
                 fk_pose, edge_indexs = fk_for_batch(
-                    batch, y_pred, quater=False, rotations_fmt="d6"
+                    batch, y_pred, quater=False, rotations_fmt="d6", device=device
                 )
                 fk_pose = fk_pose - fk_pose[..., 0:1, :]
 
-                val_loss = (
-                    torch.norm(position - fk_pose, dim=-1) * mask
-                ).sum() / mask.sum()
+                # compute losses
+                val_loss = Losses(
+                    fk_pose=fk_pose,
+                    position=position,
+                    mask=mask,
+                    mode="validation",
+                ).losses
 
-                val_losses.append(val_loss.item())
+                val_losses.append(val_loss["recn_loss"].item())
 
         if np.mean(val_losses) < prev_best_val_loss:
             prev_best_val_loss = np.mean(val_losses)
-            torch.save(model.state_dict(), f"./models/local/best_model.pt")
-            wandb.save(f"./models/local/best_model.pt")
+            torch.save(model.state_dict(), f"./models/local/{wandb_name}_best_model.pt")
+            wandb.save(f"./models/local/{wandb_name}_best_model.pt")
+
+        # Save the latest model with optimizer and scheduler and epoch
+        torch.save(
+            {
+                "model": model.state_dict(),
+                "optimizer": optimizer.state_dict(),
+                "scheduler": lr_scheduler.state_dict(),
+                "epoch": epoch,
+            },
+            f"./models/local/{wandb_name}_latest_checkpoint.tar",
+        )
+
+        wandb.save(f"./models/local/{wandb_name}_latest_checkpoint.tar")
 
         print(
             f"Epoch [{epoch+1}/{num_epochs}], Batch [{batch_idx} / {n_batches}] Loss: {np.mean(epoch_loss)} | val_losses: {np.mean(val_losses)}"

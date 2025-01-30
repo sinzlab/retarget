@@ -43,7 +43,7 @@ class TransformerEncoder(nn.Module):
         self.linear = nn.Linear(d_input, d_model)
 
         self.mean_token = nn.Parameter(torch.randn(1, d_model))
-        self.log_var_token = nn.Parameter(torch.randn(1, d_model))
+        #self.log_var_token = nn.Parameter(torch.randn(1, d_model))
 
     def forward(self, x, t_pose, edge_index, mask=None):
         src = self.linear(x)
@@ -51,21 +51,23 @@ class TransformerEncoder(nn.Module):
 
         src = graph_to_batch(src, mask)
 
-        distribution_tokens = torch.stack(
-            [
-                self.mean_token.repeat(src.shape[0], 1),
-                self.log_var_token.repeat(src.shape[0], 1),
-            ],
-            dim=1,
-        )
+        #distribution_tokens = torch.stack(
+        #    [
+        #        self.mean_token.repeat(src.shape[0], 1),
+        #        self.log_var_token.repeat(src.shape[0], 1),
+        #    ],
+        #    dim=1,
+        #)
 
+        distribution_tokens = self.mean_token.repeat(src.shape[0], 1)
+        
         src = torch.cat([distribution_tokens, src], dim=1)
         mask = torch.cat(
             [torch.ones(src.shape[0], 2, dtype=bool, device=src.device), mask], dim=1
         )
 
         output = self.transformer_encoder(src, src_key_padding_mask=~mask)
-        return output[:, 0], output[:, 1]
+        return output[:, 0]#, output[:, 1]
 
 
 class TransformerDecoder(nn.Module):
@@ -103,9 +105,9 @@ class TransformerAutoEncoder(nn.Module):
         self.decoder = TransformerDecoder(d_input=d_input - 3, d_model=d_model)
 
     def forward(self, x, t_pose, edge_index, mask=None):
-        mean, log_var = self.encoder(x, t_pose, edge_index, mask=mask)
+        mean = self.encoder(x, t_pose, edge_index, mask=mask)
 
-        z_out = self.reparametrize(mean, log_var)
+        z_out = mean
 
         decoded = self.decoder(z_out, t_pose, edge_index, mask=mask)
         return decoded, mean, log_var

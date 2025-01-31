@@ -51,19 +51,19 @@ class TransformerEncoder(nn.Module):
 
         src = graph_to_batch(src, mask)
 
-        #distribution_tokens = torch.stack(
-        #    [
-        #        self.mean_token.repeat(src.shape[0], 1),
+        distribution_tokens = torch.stack(
+            [
+                self.mean_token.repeat(src.shape[0], 1),
         #        self.log_var_token.repeat(src.shape[0], 1),
-        #    ],
-        #    dim=1,
-        #)
+            ],
+            dim=1,
+        )
 
-        distribution_tokens = self.mean_token.repeat(src.shape[0], 1)
+        #distribution_tokens = self.mean_token.repeat(src.shape[0], 1)
         
         src = torch.cat([distribution_tokens, src], dim=1)
         mask = torch.cat(
-            [torch.ones(src.shape[0], 2, dtype=bool, device=src.device), mask], dim=1
+            [torch.ones(src.shape[0], 1, dtype=bool, device=src.device), mask], dim=1
         )
 
         output = self.transformer_encoder(src, src_key_padding_mask=~mask)
@@ -110,7 +110,7 @@ class TransformerAutoEncoder(nn.Module):
         z_out = mean
 
         decoded = self.decoder(z_out, t_pose, edge_index, mask=mask)
-        return decoded, mean, log_var
+        return decoded, mean#, log_var
 
     def reparametrize(self, mean, log_var):
         """

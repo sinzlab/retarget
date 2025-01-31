@@ -33,7 +33,7 @@ if __name__ == "__main__":
     num_epochs = 30
 
     # model parameters
-    batch_size = 256
+    batch_size = 512
     d_model = 64
     d_input = 9
     nhead = 8

@@ -58,7 +58,7 @@ def trainer(
         first_cycle_steps=len(dataloader),
         cycle_mult=1,
         max_lr=1e-3,
-        min_lr=1e-6,
+        min_lr=1e-5,
         warmup_steps=200,
         gamma=1e-1 ** (1 / num_epochs),
         last_epoch=-1,
@@ -119,7 +119,7 @@ def trainer(
             optimizer.zero_grad()
 
             # Create prediction for original frame
-            y_pred, mean, log_var = model(
+            y_pred, mean = model(
                 batch.x, batch.pos, batch.edge_index, mask=mask
             )
 
@@ -129,7 +129,7 @@ def trainer(
             fk_pose = fk_pose - fk_pose[..., 0:1, :]
 
             # Create prediction for previous frame
-            y_pred_prev, mean_prev, log_var_prev = model(
+            y_pred_prev, mean_prev = model(
                 batch_prev.x, batch_prev.pos, batch_prev.edge_index, mask=mask_prev
             )
 
@@ -139,7 +139,7 @@ def trainer(
             fk_pose_prev = fk_pose_prev - fk_pose_prev[..., 0:1, :]
 
             # Create prediction for previous previous frame
-            y_pred_prev_prev, mean_prev_prev, log_var_prev_prev = model(
+            y_pred_prev_prev, mean_prev_prev = model(
                 batch_prev_prev.x,
                 batch_prev_prev.pos,
                 batch_prev_prev.edge_index,
@@ -152,7 +152,7 @@ def trainer(
             fk_pose_prev_prev = fk_pose_prev_prev - fk_pose_prev_prev[..., 0:1, :]
 
             # Create prediction for previous previous previousframe
-            y_pred_prev_prev_prev, mean_prev_prev_prev, log_var_prev_prev_prev = model(
+            y_pred_prev_prev_prev, mean_prev_prev_prev = model(
                 batch_prev_prev_prev.x,
                 batch_prev_prev_prev.pos,
                 batch_prev_prev_prev.edge_index,
@@ -199,7 +199,7 @@ def trainer(
                 torch.norm(position - fk_pose, dim=-1) * children_mask
             ).sum() / children_mask.sum()
             d6_loss = (torch.norm(d6 - y_pred, dim=-1) * mask).sum() / mask.sum()
-            kl_loss = -0.5 * torch.sum(1 + log_var - mean.pow(2) - log_var.exp())
+            #kl_loss = -0.5 * torch.sum(1 + log_var - mean.pow(2) - log_var.exp())
 
             #recn_loss_same = (
             #    torch.nn.MSELoss()(position * mask[:,:,None] * 170,fk_pose * mask[:,:,None] * 170)
@@ -214,12 +214,12 @@ def trainer(
             #d6_loss_same = (torch.nn.MSELoss()(d6 * mask.unsqueeze(-1), y_pred * mask.unsqueeze(-1)))
             
             loss = (
-                100 * recn_loss_same
+                100 * recn_loss
                 #+ (1e-6 * kl_loss)
-                + 100 * recn_loss_root_children_same
-                + 5 * d6_loss_same
-                + 10 * vel_loss_same
-                + 10 * acc_loss_scale * acc_loss_same
+                + 100 * recn_loss_root_children
+                + 5* d6_loss
+                + 100 * vel_loss
+                + 100 * acc_loss_scale * acc_loss
             )
 
             loss = loss.mean()
@@ -252,7 +252,7 @@ def trainer(
                 mask = mask_from_batch(batch).to(device)
                 position = graph_to_batch(batch.position, mask).to(device)
 
-                y_pred, mean, log_var = model(
+                y_pred, mean = model(
                     batch.x.to(device),
                     batch.pos.to(device),
                     batch.edge_index.to(device),

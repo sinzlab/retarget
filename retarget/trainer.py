@@ -184,21 +184,31 @@ def trainer(
             v_t_minus_2_pred = (fk_pose_prev_prev - fk_pose_prev_prev_prev) 
 
             # Calculate acceleration for time steps t and t-1 for jerk loss
-            a_t_pred = (v_t_pred - v_t_minus_1_pred) / fps**2
-            a_t_minus_1_pred = (v_t_minus_1_pred - v_t_minus_2_pred) / fps**2
+            a_t_pred = (v_t_pred - v_t_minus_1_pred) / fps**3
+            a_t_minus_1_pred = (v_t_minus_1_pred - v_t_minus_2_pred) / fps**3
+
+            #recn_loss_real = torch.norm((position - fk_pose)*mask[:,:,None]) / (mask.sum()*3)
+            #vel_loss_real = torch.norm((v_t - v_t_pred)*mask[:,:,None]) / (mask.sum() * 3)
+            #acc_loss_real = torch.norm((a_t_pred - a_t_minus_1_pred)*mask[:,:,None]) / (mask.sum() * 3)
+            #recn_loss_root_children_real = torch.norm((position - fk_pose) * children_mask[:,:,None]) / (children_mask.sum() * 3)
+            #d6_loss_real = torch.norm((d6 - y_pred)*mask[:,:,None]) / (mask.sum() * 6)
 
             # compute losses
             recn_loss = (
-                torch.norm(position - fk_pose, dim=-1) * mask
+                torch.norm(position - fk_pose,dim=-1) * mask
             ).sum() / mask.sum()
-            vel_loss = (torch.norm(v_t - v_t_pred, dim=-1) * mask).sum() / mask.sum()
+            vel_loss = (torch.norm(v_t - v_t_pred,dim=-1) * mask).sum() / mask.sum()
             acc_loss = (
-                torch.norm(a_t_pred - a_t_minus_1_pred, dim=-1) * mask
+                torch.norm(a_t_pred - a_t_minus_1_pred,dim=-1) * mask
             ).sum() / mask.sum()
             recn_loss_root_children = (
-                torch.norm(position - fk_pose, dim=-1) * children_mask
+                torch.norm(position - fk_pose,dim=-1) * children_mask
             ).sum() / children_mask.sum()
-            d6_loss = (torch.norm(d6 - y_pred, dim=-1) * mask).sum() / mask.sum()
+            d6_loss = (torch.norm(d6 - y_pred,dim=-1) * mask).sum() / mask.sum()
+
+            #CALCULATE LATENT SPACE LOSS
+            latent_loss = torch.norm(mean-mean_prev) / torch.numel(mean)
+            
             #kl_loss = -0.5 * torch.sum(1 + log_var - mean.pow(2) - log_var.exp())
 
             #recn_loss_same = (
@@ -220,6 +230,7 @@ def trainer(
                 + 5* d6_loss
                 + 100 * vel_loss
                 + 100 * acc_loss_scale * acc_loss
+                + latent_loss
             )
 
             loss = loss.mean()

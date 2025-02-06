@@ -47,19 +47,21 @@ def trainer(
 
     model = model.to(device)
 
-    optimizer = torch.optim.AdamW(model.parameters(), lr=1e-3, weight_decay=0.001)
+    optimizer = torch.optim.AdamW(model.parameters(), lr=1e-3, weight_decay=0.0001)
 
     if resume_checkpoint:
         optimizer.load_state_dict(resume_checkpoint["optimizer"])
 
+    fps = 1/30    
     losses = []
     prev_best_val_loss = 1e6
+    
     lr_scheduler = CosineAnnealingWarmupRestarts(
         optimizer,
         first_cycle_steps=len(dataloader),
         cycle_mult=1,
         max_lr=1e-3,
-        min_lr=1e-6,
+        min_lr=1e-5,
         warmup_steps=200,
         gamma=1e-1 ** (1 / num_epochs),
         last_epoch=-1,
@@ -118,7 +120,7 @@ def trainer(
             optimizer.zero_grad()
 
             # Create prediction for original frame
-            y_pred, mean, log_var = model(
+            y_pred, mean = model(
                 batch.x, batch.pos, batch.edge_index, mask=mask
             )
 
@@ -128,7 +130,7 @@ def trainer(
             fk_pose = fk_pose - fk_pose[..., 0:1, :]
 
             # Create prediction for previous frame
-            y_pred_prev, mean_prev, log_var_prev = model(
+            y_pred_prev, mean_prev = model(
                 batch_prev.x, batch_prev.pos, batch_prev.edge_index, mask=mask_prev
             )
 
@@ -138,7 +140,7 @@ def trainer(
             fk_pose_prev = fk_pose_prev - fk_pose_prev[..., 0:1, :]
 
             # Create prediction for previous previous frame
-            y_pred_prev_prev, mean_prev_prev, log_var_prev_prev = model(
+            y_pred_prev_prev, mean_prev_prev = model(
                 batch_prev_prev.x,
                 batch_prev_prev.pos,
                 batch_prev_prev.edge_index,
@@ -155,7 +157,7 @@ def trainer(
             fk_pose_prev_prev = fk_pose_prev_prev - fk_pose_prev_prev[..., 0:1, :]
 
             # Create prediction for previous previous previousframe
-            y_pred_prev_prev_prev, mean_prev_prev_prev, log_var_prev_prev_prev = model(
+            y_pred_prev_prev_prev, mean_prev_prev_prev = model(
                 batch_prev_prev_prev.x,
                 batch_prev_prev_prev.pos,
                 batch_prev_prev_prev.edge_index,
@@ -200,13 +202,25 @@ def trainer(
                 mode="train",
             ).losses
 
+            # compute losses
+            #recn_loss = (
+            #    torch.norm(position - fk_pose,dim=-1) * mask
+            #).sum() / mask.sum()
+            #vel_loss = (torch.norm(v_t - v_t_pred,dim=-1) * mask).sum() / mask.sum()
+            #acc_loss = (
+            #    torch.norm(a_t_pred - a_t_minus_1_pred,dim=-1) * mask
+            #).sum() / mask.sum()
+            #recn_loss_root_children = (
+            #    torch.norm(position - fk_pose,dim=-1) * children_mask
+            #).sum() / children_mask.sum()
+            #d6_loss = (torch.norm(d6 - y_pred,dim=-1) * mask).sum() / mask.sum()
+            
             loss = (
-                train_losses["recn_loss"]
-                + (1e-6 * train_losses["kl_loss"])
-                + 10 * train_losses["recn_loss_root_children"]
-                + train_losses["d6_loss"]
-                + val_loss_scale * train_losses["vel_loss"]
-                + acc_loss_scale * train_losses["acc_loss"]
+                100 * train_losses["recn_loss"]
+                + 100 * train_losses["recn_loss_root_children"]
+                + 5 * train_losses["d6_loss"]
+                + 100 * train_losses["vel_loss"]
+                + 100 * acc_loss_scale * train_losses["acc_loss"]
             )
 
             loss = loss.mean()
@@ -226,10 +240,10 @@ def trainer(
 
             wandb.log(
                 {
-                    "loss": train_losses["recn_loss"].item(),
+                    "loss": 170 * train_losses["recn_loss"].item(),
                     "angle loss": train_losses["d6_loss"].item(),
-                    "velocity loss": train_losses["vel_loss"].item(),
-                    "accelaration loss": train_losses["acc_loss"].item(),
+                    "velocity loss": 170 * train_losses["vel_loss"].item() / fps,
+                    "jerk loss": 170 * train_losses["acc_loss"].item() * fps,
                 }
             )
 
@@ -242,7 +256,7 @@ def trainer(
                 mask = mask_from_batch(batch).to(device)
                 position = graph_to_batch(batch.position, mask).to(device)
 
-                y_pred, mean, log_var = model(
+                y_pred, mean = model(
                     batch.x.to(device),
                     batch.pos.to(device),
                     batch.edge_index.to(device),
@@ -262,10 +276,10 @@ def trainer(
                     mode="validation",
                 ).losses
 
-                val_losses.append(val_loss["recn_loss"].item())
+                val_losses.append(170 * val_loss["recn_loss"].item())
 
         if np.mean(val_losses) < prev_best_val_loss:
-            prev_best_val_loss = np.mean(val_losses)
+            prev_best_val_loss = np.mean(170 * val_losses)
             torch.save(model.state_dict(), f"./models/local/{wandb_name}_best_model.pt")
             wandb.save(f"./models/local/{wandb_name}_best_model.pt")
 
@@ -285,4 +299,4 @@ def trainer(
         print(
             f"Epoch [{epoch+1}/{num_epochs}], Batch [{batch_idx} / {n_batches}] Loss: {np.mean(epoch_loss)} | val_losses: {np.mean(val_losses)}"
         )
-        wandb.log({"mean loss": np.mean(epoch_loss), "val_loss": np.mean(val_losses)})
+        wandb.log({"mean loss": 170 * np.mean(epoch_loss), "val_loss": 170 * np.mean(val_losses)})

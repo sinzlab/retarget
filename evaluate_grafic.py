@@ -1,0 +1,70 @@
+import torch
+from torch_geometric.loader import DataLoader
+import numpy as np
+
+from retarget.utils.Quaternions_old import d6_2_quat, Quaternions
+from retarget.utils.Animation import Animation
+from retarget.model import TransformerAutoEncoder
+from retarget.model import TransformerAutoEncoder
+from retarget.tokenizer import Tokenizer
+from retarget.utils.BVH import load, save
+from retarget.utils.visualize import plot_pose
+
+import argparse
+
+if __name__ == "__main__":
+
+    device = torch.device("cpu")
+
+    #Load pretrained model
+    print("LOAD PRETRAINED MODEL")
+    model_name = "dazzling-capybara-237"
+    checkpoint = torch.load(f"./models/local/{model_name}_latest_checkpoint.tar", map_location = "cpu")
+    #model = TransformerAutoEncoder.from_pretrained(f'local/{model_name}_best_model.pt')
+    model = TransformerAutoEncoder.from_pretrained(checkpoint["epoch"], checkpoint = checkpoint)
+    tokenizer = Tokenizer()
+
+    #string = "Capoeira"
+
+    string = "bow"
+    #animation, new_names, _ = load('/home/kia/MOTION_ESTIMATION/DATA_BANDAI_NAMCO/test/val_data/bandai-namco/dataset-2_run_masculine_006.bvh',ground_feet=False)
+
+    if string == "Capoeira":
+        animation, new_names, _ = load('/user/kyang2/u12303/skip-dataset/train/Amy/Capoeira.bvh',ground_feet=False)
+    else:
+        animation, new_names, _ = load('/user/kyang2/u12303/skip-dataset/test/bandai-namco/dataset-1_bow_old_001.bvh',ground_feet=False)
+
+    #
+    animation.positions[...,:,:] -= animation.positions[...,0:1,:]
+    # convert the animation to a graph
+    data = animation.as_graph()
+
+    # encode the graph using the tokenizer
+    batch, mask = tokenizer.encode(data)
+
+    with torch.inference_mode():
+        # encode the animation into the latent space
+        latent, logvar = model.encoder(batch.x, batch.pos, batch.edge_index, mask=mask)
+
+        # decode the latent space back into the animation
+        y_pred = model.decoder(latent, batch.pos, batch.edge_index, mask=mask)
+
+    fk_pose, edge_indexs = tokenizer.decode(batch, y_pred[...,:,:])
+    rotations = Quaternions(np.stack([d6_2_quat(d6) for d6 in y_pred[...,:,:]]))
+    positions = (fk_pose - fk_pose[...,0:1,:]).detach().numpy()
+
+    #positions[:,0] = animation.positions[:,0]
+
+    recon_anim = Animation(rotations,
+                           positions*170,
+                           animation.orients,
+                           animation.offsets*170,
+                           animation.parents,
+    )
+
+    if string == "Capoeira":
+        save(f"Capoeira_{model_name}.bvh", recon_anim)
+    else:
+        save(f"bow_{model_name}.bvh", recon_anim)
+    #save("bow_no_traj_truth.bvh",animation)
+    #save("Capoeira_no_traj_truth.bvh",animation)

@@ -211,24 +211,33 @@ class Animation:
         from retarget.utils.Quaternions_old import quat_2_d6
 
         data = []
-        for position, rotation in zip(
-            self.positions[::stride], self.rotations[::stride]
-        ):
-            d6 = quat_2_d6(rotation)
 
-            position = torch.Tensor(position)
-            position = position - position[0]
-            position_x = position.clone()
+        for i,(position, rotation) in enumerate(zip(
+                self.positions[::stride], self.rotations[::stride]
+            )):
+                d6 = quat_2_d6(rotation)
+                
+                position = torch.Tensor(position)
+                position = position - position[0]
 
-            rotation = torch.Tensor(rotation)
-            d6 = torch.Tensor(d6)
+                if i * stride == 0:
+                    position_prev = torch.Tensor(position)
+                else:
+                    position_prev = torch.Tensor(self.positions[(i-1)*stride])
+                position_prev = position_prev - position_prev[0]
+
+                velocity = position - position_prev
+                
+                rotation = torch.Tensor(rotation)
+                d6 = torch.Tensor(d6)
 
             t_pose = torch.Tensor(self.t_pose)
             offsets = torch.Tensor(self.offsets)
             parents = torch.LongTensor(self.parents)
             edges = torch.LongTensor(self.edges.T)
 
-            features = torch.cat([d6, position_x], dim=-1)
+
+            features = torch.cat([d6, position, position_prev, velocity], dim=-1)
 
             data.append(
                 Data(

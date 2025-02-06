@@ -29,12 +29,12 @@ if __name__ == "__main__":
     torch.backends.cudnn.benchmark = True
 
     # training parameters
-    resume = False  # 'local/model:49'
-    resume_from_epoch = 0
+    resume = False#torch.load("./models/local/helpful-elevator-168_latest_checkpoint.tar", map_location="cpu")  # 'local/model:49'
+    resume_from_epoch = 0 #resume["epoch"]
     num_epochs = 30
 
     # model parameters
-    batch_size = 64
+    batch_size = 512
     d_model = 64
     d_input = 9
     nhead = 8
@@ -43,14 +43,14 @@ if __name__ == "__main__":
     wandb.init(entity="sinzlab", project="retarget", dir="./.wandb")
 
     # Data
-    train_data = MixamoDataset(directory="./data/Combined/train", mode="train")
-    test_data = MixamoDataset(directory="./data/Combined/test", mode="test")
+    train_data = MixamoDataset(directory="/user/kyang2/u12303/skip-dataset/train", mode="train")
+    test_data = MixamoDataset(directory="/user/kyang2/u12303/skip-dataset/test", mode="test")
     train_dataloader = DataLoader(train_data, batch_size=batch_size, shuffle=True)
     test_dataloader = DataLoader(test_data, batch_size=batch_size)
 
     # Model
     if resume:
-        model = TransformerAutoEncoder.from_pretrained(resume)
+        model = TransformerAutoEncoder.from_pretrained(resume,checkpoint = resume)
     else:
         model = TransformerAutoEncoder(
             d_input=d_input, d_model=d_model, nhead=nhead, num_layers=num_layers
@@ -63,6 +63,7 @@ if __name__ == "__main__":
         test_dataloader,
         num_epochs=num_epochs,
         resume_from_epoch=resume_from_epoch,
+        resume_checkpoint = resume,
     )
 
     # Save model

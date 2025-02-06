@@ -70,11 +70,15 @@ class MixamoDataset(Dataset):
         # Also Initialize empty list with frame times between frames
         # self.data_prev[idx] stores the offset frame from the original frame.
         if mode == "train":
-            self.data_prev = [[], [], []]
+            self.data_prev = [[], [], [], []]
             self.time = []
 
         for animation, time in zip(self.animations, self.frame_time):
-            animation_graphs = animation.as_graph()
+            if 1/time > 100:
+                animation_graphs = animation.as_graph(stride=4)
+            else:
+                animation_graphs = animation.as_graph()
+
             n_graphs = len(animation_graphs)
             total_frames_currently = len(self.data)
 
@@ -98,17 +102,28 @@ class MixamoDataset(Dataset):
 
                 # Previous Previous frame
                 idx_prev_prev = np.arange(n_graphs)
-                idx_prev_prev[1:3] -= 1
-                idx_prev_prev[3:] -= 2
+                idx_prev_prev[1:2] -= 1
+                idx_prev_prev[2:] -= 2
                 idx_prev_prev += total_frames_currently
                 self.data_prev[1] += list(idx_prev_prev)
 
                 # Previous Previous Previous frame
                 idx_prev_prev_prev = np.arange(n_graphs)
-                idx_prev_prev_prev[1:3] -= 1
+                idx_prev_prev_prev[1:2] -= 1
+                idx_prev_prev_prev[2:3] -= 2
                 idx_prev_prev_prev[3:] -= 3
                 idx_prev_prev_prev += total_frames_currently
                 self.data_prev[2] += list(idx_prev_prev_prev)
+
+                #Previous Previous Previous Previous frame
+                idx_prev_prev_prev_prev = np.arange(n_graphs)
+                idx_prev_prev_prev_prev[1:2] -= 1
+                idx_prev_prev_prev_prev[2:3] -= 2
+                idx_prev_prev_prev_prev[3:4] -= 3
+                idx_prev_prev_prev_prev[4:] -= 4
+
+                idx_prev_prev_prev_prev += total_frames_currently
+                self.data_prev[3] += list(idx_prev_prev_prev_prev)
 
         print("=== Mixamo Dataset Summary ===")
         print(
@@ -144,6 +159,10 @@ class MixamoDataset(Dataset):
             # If the mode is "train", then also define the previous previous previous frame
             item_prev_prev_prev = self.data[self.data_prev[2][idx]].clone()
 
+            # If the mode is "train", then also define the previous previous previous previous frame
+            item_prev_prev_prev_prev = self.data[self.data_prev[3][idx]].clone()
+
+            
             # Offsets from (previous-) previous frame and current frame is the same (From same Animation)
             scaled_offsets = item.offsets.numpy().copy()
             if np.random.rand() < 0.5:
@@ -161,15 +180,13 @@ class MixamoDataset(Dataset):
             parents = item.parents.numpy()
             rotation = item.rotation.numpy()
             edges = item.edge_index.numpy().T
-
             position = forward_rotations(
                 parents, scaled_offsets, Quaternions(rotation[None, ...])
             )[0]
-
             t_pose = AnimationStructure.t_pose(scaled_offsets, edges)
 
             item.position = torch.Tensor(position)
-            item.x[:, 6:] = torch.Tensor(position).clone()
+            item.x[:,6:9] = torch.Tensor(position).clone()
             item.offsets = torch.Tensor(scaled_offsets)
             item.pos = torch.Tensor(t_pose)
 
@@ -185,6 +202,7 @@ class MixamoDataset(Dataset):
 
             t_pose_prev = AnimationStructure.t_pose(scaled_offsets_prev, edges_prev)
 
+            item_prev.x[:,6:9] = torch.Tensor(position_prev).clone()
             item_prev.position = torch.Tensor(position_prev)
             item_prev.x[:, 6:] = torch.Tensor(position_prev).clone()
             item_prev.offsets = torch.Tensor(scaled_offsets_prev)
@@ -206,6 +224,8 @@ class MixamoDataset(Dataset):
                 scaled_offsets_prev_prev, edges_prev_prev
             )
 
+
+            item_prev_prev.x[:,6:9] = torch.Tensor(position_prev_prev).clone()
             item_prev_prev.position = torch.Tensor(position_prev_prev)
             item_prev_prev.x[:, 6:] = torch.Tensor(position_prev_prev).clone()
             item_prev_prev.offsets = torch.Tensor(scaled_offsets_prev_prev)
@@ -226,12 +246,45 @@ class MixamoDataset(Dataset):
             t_pose_prev_prev_prev = AnimationStructure.t_pose(
                 scaled_offsets_prev_prev_prev, edges_prev_prev_prev
             )
-
+            
+            item_prev_prev_prev.x[:,6:9] = torch.Tensor(position_prev_prev_prev).clone()
             item_prev_prev_prev.position = torch.Tensor(position_prev_prev_prev)
             item_prev_prev_prev.x[:, 6:] = torch.Tensor(position_prev_prev_prev).clone()
             item_prev_prev_prev.offsets = torch.Tensor(scaled_offsets_prev_prev_prev)
             item_prev_prev_prev.pos = torch.Tensor(t_pose_prev_prev_prev)
 
+            # For previous previous previous previous frame
+            parents_prev_prev_prev_prev = item_prev_prev_prev_prev.parents.numpy()
+            rotation_prev_prev_prev_prev = item_prev_prev_prev_prev.rotation.numpy()
+            edges_prev_prev_prev_prev = item_prev_prev_prev_prev.edge_index.numpy().T
+            scaled_offsets_prev_prev_prev_prev = scaled_offsets.copy()
+
+            position_prev_prev_prev_prev = forward_rotations(
+                parents_prev_prev_prev_prev,
+                scaled_offsets_prev_prev_prev_prev,
+                Quaternions(rotation_prev_prev_prev_prev[None, ...]),
+            )[0]
+
+            t_pose_prev_prev_prev_prev = AnimationStructure.t_pose(
+                scaled_offsets_prev_prev_prev_prev, edges_prev_prev_prev_prev
+            )
+            
+            item_prev_prev_prev_prev.x[:,6:9] = torch.Tensor(position_prev_prev_prev_prev).clone()
+            item_prev_prev_prev_prev.position = torch.Tensor(position_prev_prev_prev_prev)
+            item_prev_prev_prev_prev.offsets = torch.Tensor(scaled_offsets_prev_prev_prev_prev)
+            item_prev_prev_prev_prev.pos = torch.Tensor(t_pose_prev_prev_prev_prev)
+
+            #Set the scaled skeletons new velocity and previous frame
+            item.x[:,9:12] = torch.Tensor(position_prev).clone()
+            item_prev.x[:,9:12] = torch.Tensor(position_prev_prev).clone()
+            item_prev_prev.x[:,9:12] = torch.Tensor(position_prev_prev_prev).clone()
+            item_prev_prev_prev.x[:,9:12] = torch.Tensor(position_prev_prev_prev_prev).clone()
+
+            item.x[:,12:] = torch.Tensor(position - position_prev).clone()
+            item_prev.x[:,12:] = torch.Tensor(position_prev - position_prev_prev).clone()
+            item_prev_prev.x[:,12:] = torch.Tensor(position_prev_prev - position_prev_prev_prev).clone()
+            item_prev_prev_prev.x[:,12:] = torch.Tensor(position_prev_prev_prev - position_prev_prev_prev_prev).clone()
+            
             # Store all the previous items in one list.
             previous_items = [item_prev, item_prev_prev, item_prev_prev_prev]
 

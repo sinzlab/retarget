@@ -60,8 +60,8 @@ class Losses:
             Shape of each Entry: (batch_size, joints, 3)
 
         children_mask: torch.Tensor
-           ???
-           Shape: ???
+           Mask, defining which joints are the children of the root
+           Shape: (batch_size, joints, 3)
 
         d6: torch.Tensor
             Tensor of the 6d representation for every joint

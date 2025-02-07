@@ -19,14 +19,12 @@ class Losses:
         fk_pose: torch.Tensor,
         position: torch.Tensor,
         mask: torch.Tensor,
-        fk_poses_prev: List[torch.Tensor] = None,
-        position_prev: List[torch.Tensor] = None,
         children_mask: torch.Tensor = None,
         d6: torch.Tensor = None,
-        d6_pred: torch.Tensor = None,
-        log_var: torch.Tensor = None,
+        #log_var: torch.Tensor = None,
         mean: torch.Tensor = None,
         frame_time: torch.tensor = None,
+        consec_frames: int = None,
         mode: str = "train",
     ):
         """
@@ -45,30 +43,14 @@ class Losses:
 
         mask: torch.Tensor
            Mask, defining which joints are padded and which not
-           Shape: (batch_size, joints, 3)
-
-        fk_poses_prev: List[torch.Tensor]
-            List of the first, second and third previous reconstructed joint positions using the predicted rotations.
-            First entry is one previous frame, second entry two previous frames and third entry the three previous frames
-            Lenghts of List: 3
-            Shape of each Entry: (batch_size, joints, 3)
-
-        position_prev: List[torch.Tensor]
-            List of the first, second and third previous ground truth joint positions.
-            First entry is one previous frame, second entry two previous frames and third entry the three previous frames
-            Lenghts of List: 3
-            Shape of each Entry: (batch_size, joints, 3)
+           Shape: (batch_size, joints)
 
         children_mask: torch.Tensor
            Mask, defining which joints are the children of the root
-           Shape: (batch_size, joints, 3)
+           Shape: (batch_size, joints)
 
         d6: torch.Tensor
             Tensor of the 6d representation for every joint
-            Shape: (batch_size, joints, 6)
-
-        d6_pred: torch.Tensor
-            Tensor of the predicted 6d representation for every joint
             Shape: (batch_size, joints, 6)
 
         log_var: torch.Tensor
@@ -84,6 +66,9 @@ class Losses:
             Time difference between two frames
             Shape: (batch_size, 1, 1)
 
+        consec_frames: int
+            Integer, defining how many consecutive frames where loaded
+        
         mode: str
             Mode, to define if the losses if for training or validation
 
@@ -101,107 +86,177 @@ class Losses:
         if self.mode == "train":
 
             # Check that all values used for train is not None
-            assert fk_poses_prev is not None
             assert children_mask is not None
             assert d6 is not None
-            assert d6_pred is not None
-            assert log_var is not None
+            #assert log_var is not None
             assert frame_time is not None
-            assert position_prev is not None
             assert mean is not None
-
-            self.fk_poses_prev = fk_poses_prev
-            self.position_prev = position_prev
+            assert consec_frames is not None
+            
             self.d6 = d6
-            self.d6_pred = d6_pred
-            self.log_var = log_var
+            #self.log_var = log_var
             self.mean = mean
             self.children_mask = children_mask
             self.frame_time = frame_time
+            self.consec_frames = consec_frames
 
-            self.v_t = self.get_velocity(idx=0, vel_pred=False)
-            self.v_t_pred = self.get_velocity(idx=0, vel_pred=True)
-            self.v_t_minus_1_pred = self.get_velocity(idx=1, vel_pred=True)
-            self.v_t_minus_2_pred = self.get_velocity(idx=2, vel_pred=True)
-            self.a_t_pred = self.get_acceleration(idx=0)
-            self.a_t_minus_1_pred = self.get_acceleration(idx=1)
+            self.batch_size = self.position.shape[0]
+            self.N_joints = self.position.shape[1]
+            self.N_consecs = self.batch_size // self.consec_frames
 
-    def get_velocity(
-        self,
-        idx: int,
-        vel_pred: bool = False,
-    ) -> torch.Tensor:
+            self.fk_pose = self.fk_pose.reshape(self.N_consecs,
+                                                self.consec_frames,
+                                                self.N_joints,
+                                                3,
+            )
+
+            self.position = self.position.reshape(self.N_consecs,
+                                                  self.consec_frames,
+                                                  self.N_joints,
+                                                  3,
+            )
+
+            self.d6 = self.d6.reshape(self.N_consecs,
+                                      self.consec_frames,
+                                      self.N_joints,
+                                      6,
+            )
+
+            self.mask = self.mask.reshape(self.N_consecs,
+                                          self.consec_frames,
+                                          self.N_joints,
+            )
+
+            self.children_mask = self.children_mask.reshape(self.N_consecs,
+                                                            self.consec_frames,
+                                                            self.N_joints,
+            )
+            
+            
+    def reconstruction_loss():
         """
-        Calculate the velocity (Frame changing rate) of the (predicted-) frame t-idx.
-        v_t = (p_{t} - p_{t-1}) / frame_time
-        --> To get v^{t}, choose idx = 0,
-        --> v^{t-1}, choose idx = 1, ....
+        Calculate reconstruction loss for all joint positions
 
         Parameters
         ----------
 
-        idx: int
-            Define for which timestep to get the velocity
-
-        vel_pred: bool
-            Define if we want the predicted velocity or the ground truth
-
-        Returns:
-            torch.Tensor
-            Shape: (batch_size, joints, 3)
-        """
-
-        # Make sure that the idx does not go over 2, since only 3 offset frames are considered
-        assert idx < 3
-
-        if (idx == 0) and not vel_pred:
-            v_t = (self.position - self.position_prev[0]) / self.frame_time
-            return v_t
-        elif (idx == 0) and vel_pred:
-            v_t_pred = (self.fk_pose - self.fk_poses_prev[idx]) / self.frame_time
-            return v_t_pred
-        elif (idx > 0) and vel_pred:
-            v_t_pred_prev = (
-                self.fk_poses_prev[idx - 1] - self.fk_poses_prev[idx]
-            ) / self.frame_time
-            return v_t_pred_prev
-        else:
-            raise ValueError("Trying to get velocity of idx > 0: Not possible")
-
-    def get_acceleration(
-        self,
-        idx: int,
-    ) -> torch.Tensor:
-        """
-        Calculate the acceleration of the predicted frame t-idx.
-        a_t = (v_{t} - v_{t-1}) / frame_time
-        --> To get a^{t}, choose idx = 0,
-        --> a^{t-1}, choose idx = 1.
-
-        Parameters
-        ----------
-
-        idx: int
-            Define for which timestep to get the predicted acceleration
+        None
 
         Returns
         -------
 
         torch.Tensor
-            Shape: (batch_size, joints, 3)
+        """
+        recn_loss = (
+            torch.norm(self.position - self.fk_pose, dim=-1) * self.mask
+        ).sum() / self.mask.sum()
+
+        return recn_loss
+
+    def reconstruction_root_children_loss():
+        """
+        Calculate reconstruction loss for joint positions,
+        where the joint is directly connected to the root
+
+        Parameters
+        ----------
+
+        None
+
+        Returns
+        -------
+
+        torch.Tensor
+        """
+        recn_loss_root_children = (
+            torch.norm(self.position - self.fk_pose, dim=-1) * self.children_mask
+        ).sum() / self.children_mask.sum()
+
+        return recn_loss_root_children
+    
+    def velocity_loss():
+        """
+        Calculate velocity loss for all joint position velocities
+        
+        Parameters
+        ----------
+
+        None
+
+        Returns
+        -------
+
+        torch.Tensor
         """
 
-        assert idx < 2
+        vel_loss = (
+                torch.norm(self.position[:,1:] - self.fk_pose[:,:-1], dim=-1) * self.mask[:,1:]).sum() / self.mask[:,1:].sum()
 
-        if idx == 0:
-            a_t_pred = (self.v_t_pred - self.v_t_minus_1_pred) / self.frame_time
-            return a_t_pred
-        if idx == 1:
-            a_t_minus_1_pred = (
-                self.v_t_minus_1_pred - self.v_t_minus_2_pred
-            ) / self.frame_time
-            return a_t_minus_1_pred
+        return vel_loss
 
+    def jerk_loss():
+        """
+        Calculate jerk loss for all joint position accelaration changing rates
+        
+        Parameters
+        ----------
+
+        None
+
+        Returns
+        -------
+
+        torch.Tensor
+        """
+
+        acc_loss = (
+                torch.norm(self.position[:,3:] - 3 * self.position[:,2:-1] + 3 * self.position[:,1:-2] - self.position[:,:-3], dim=-1) / (self.frame_time**3) * self.mask[:,3:]
+        ).sum() / self.mask[:,3:].sum()
+
+        return acc_loss
+
+    def d6_angle_loss():
+        """
+        Calculate jerk loss for all joint d6's
+        
+        Parameters
+        ----------
+
+        None
+
+        Returns
+        -------
+
+        torch.Tensor
+        """
+
+        d6_loss = (
+            torch.norm(self.d6 - self.d6_pred, dim=-1) * self.mask
+        ).sum() / self.mask.sum()
+
+        return d6_loss
+
+    def kl_loss():
+        """
+        Calculate kl-divergence loss for variational autoencoders
+        
+        Parameters
+        ----------
+
+        None
+
+        Returns
+        -------
+
+        torch.Tensor
+        """
+        
+        kl_loss = -0.5 * torch.sum(
+            1 + self.log_var - self.mean.pow(2) - self.log_var.exp()
+        )
+
+        return kl_loss
+    
     @property
     def losses(
         self,
@@ -221,33 +276,14 @@ class Losses:
         Dict[str, torch.Tensor]
         """
 
-        recn_loss = (
-            torch.norm(self.position - self.fk_pose, dim=-1) * self.mask
-        ).sum() / self.mask.sum()
-
         if self.mode == "train":
-            vel_loss = (
-                torch.norm(self.v_t - self.v_t_pred, dim=-1) * self.mask
-            ).sum() / self.mask.sum()
-            acc_loss = (
-                torch.norm(self.a_t_pred - self.a_t_minus_1_pred, dim=-1) * self.mask
-            ).sum() / self.mask.sum()
-            recn_loss_root_children = (
-                torch.norm(self.position - self.fk_pose, dim=-1) * self.children_mask
-            ).sum() / self.children_mask.sum()
-            d6_loss = (
-                torch.norm(self.d6 - self.d6_pred, dim=-1) * self.mask
-            ).sum() / self.mask.sum()
-            kl_loss = -0.5 * torch.sum(
-                1 + self.log_var - self.mean.pow(2) - self.log_var.exp()
-            )
             return {
-                "recn_loss": recn_loss,
-                "vel_loss": vel_loss,
-                "acc_loss": acc_loss,
-                "recn_loss_root_children": recn_loss_root_children,
-                "d6_loss": d6_loss,
-                "kl_loss": kl_loss,
+                "recn_loss": reconstruction_loss(),
+                "vel_loss": velocity_loss(),
+                "acc_loss": jerk_loss(),
+                "recn_loss_root_children": reconstruction_root_children_loss(),
+                "d6_loss": d6_angle_loss(),
+                #"kl_loss": kl_loss,
             }
 
-        return {"recn_loss": recn_loss}
+        return {"recn_loss": reconstruction_loss}

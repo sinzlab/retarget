@@ -85,9 +85,6 @@ def trainer(
             batch_idx += 1
 
             batch = batch.to(device)
-            batch_prev = previous_batches[0].to(device)
-            batch_prev_prev = previous_batches[1].to(device)
-            batch_prev_prev_prev = previous_batches[2].to(device)
             frame_time = frame_time[:, None, None].to(device)
 
             # Create mask, position and d6 for original frame
@@ -191,15 +188,14 @@ def trainer(
                 fk_pose=fk_pose,
                 position=position,
                 mask=mask,
-                fk_poses_prev=fk_poses_prev,
-                position_prev=position_prev,
                 children_mask=children_mask,
                 d6=d6,
                 d6_pred=y_pred,
-                log_var=log_var,
+                #log_var=log_var,
                 mean=mean,
-                frame_time=frame_time,
+                frame_time=fps,
                 mode="train",
+                consec_frames = 8,
             ).losses
 
             # compute losses

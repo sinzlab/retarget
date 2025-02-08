@@ -45,7 +45,7 @@ if __name__ == "__main__":
     nhead = 8
     num_layers = 4
 
-    wandb.init("disabled")#entity="sinzlab", project="retarget", dir="./.wandb")
+    wandb.init(entity="sinzlab", project="retarget", dir="./.wandb")
 
     # Data
     train_data = MixamoDataset(directory="/user/kyang2/u12303/skip-dataset/train", mode="train")

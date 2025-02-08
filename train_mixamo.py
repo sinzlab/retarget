@@ -19,11 +19,16 @@ except ImportError:
     import wandb
 
 import torch
-from torch_geometric.loader import DataLoader
+#from torch_geometric.loader import DataLoader
+from torch.utils.data import DataLoader
+from torch_geometric.data import Batch
 
 from retarget.dataset import MixamoDataset
 from retarget.model import TransformerAutoEncoder
 from retarget.trainer import trainer
+
+def collate_fn(data):
+    return data 
 
 if __name__ == "__main__":
     torch.backends.cudnn.benchmark = True
@@ -34,19 +39,19 @@ if __name__ == "__main__":
     num_epochs = 30
 
     # model parameters
-    batch_size = 512
+    batch_size = 256
     d_model = 64
     d_input = 9
     nhead = 8
     num_layers = 4
 
-    wandb.init(entity="sinzlab", project="retarget", dir="./.wandb")
+    wandb.init("disabled")#entity="sinzlab", project="retarget", dir="./.wandb")
 
     # Data
     train_data = MixamoDataset(directory="/user/kyang2/u12303/skip-dataset/train", mode="train")
     test_data = MixamoDataset(directory="/user/kyang2/u12303/skip-dataset/test", mode="test")
-    train_dataloader = DataLoader(train_data, batch_size=batch_size, shuffle=True)
-    test_dataloader = DataLoader(test_data, batch_size=batch_size)
+    train_dataloader = DataLoader(train_data, batch_size=batch_size, shuffle=True, collate_fn = collate_fn)
+    test_dataloader = DataLoader(test_data, batch_size=batch_size, collate_fn = collate_fn)
 
     # Model
     if resume:
@@ -64,6 +69,7 @@ if __name__ == "__main__":
         num_epochs=num_epochs,
         resume_from_epoch=resume_from_epoch,
         resume_checkpoint = resume,
+#        device="cpu",
     )
 
     # Save model

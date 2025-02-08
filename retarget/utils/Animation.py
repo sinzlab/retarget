@@ -1,6 +1,7 @@
 import operator
 
 import numpy as np
+import copy
 
 import retarget.utils.AnimationStructure as AnimationStructure
 from retarget.model import graph_to_batch, mask_from_batch
@@ -215,21 +216,24 @@ class Animation:
         for i,(position, rotation) in enumerate(zip(
                 self.positions[::stride], self.rotations[::stride]
             )):
-                d6 = quat_2_d6(rotation)
+            d6 = quat_2_d6(rotation)
                 
-                position = torch.Tensor(position)
-                position = position - position[0]
+            position = torch.Tensor(position)
+            position = position - position[0]
 
-                if i * stride == 0:
-                    position_prev = torch.Tensor(position)
-                else:
-                    position_prev = torch.Tensor(self.positions[(i-1)*stride])
-                position_prev = position_prev - position_prev[0]
+            if i * stride == 0:
+                position_prev = torch.Tensor(position)
+                rotation_prev = torch.Tensor(rotation)
+            else:
+                idx_prev = (i-1)*stride
+                position_prev = torch.Tensor(self.positions[idx_prev])
 
-                velocity = position - position_prev
+            position_prev = position_prev - position_prev[0]
+
+            velocity = position - position_prev
                 
-                rotation = torch.Tensor(rotation)
-                d6 = torch.Tensor(d6)
+            rotation = torch.Tensor(rotation)
+            d6 = torch.Tensor(d6)
 
             t_pose = torch.Tensor(self.t_pose)
             offsets = torch.Tensor(self.offsets)
@@ -246,11 +250,14 @@ class Animation:
                     rotation=rotation,
                     position=position,
                     d6=d6,
+                    rotation_prev = rotation_prev,
                     pos=t_pose,
                     offsets=offsets,
                     parents=parents,
                 )
             )
+
+            rotation_prev = copy.deepcopy(rotation)
 
         return data
 

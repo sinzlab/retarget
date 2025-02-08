@@ -21,6 +21,7 @@ class Losses:
         mask: torch.Tensor,
         children_mask: torch.Tensor = None,
         d6: torch.Tensor = None,
+        d6_pred: torch.Tensor = None,
         #log_var: torch.Tensor = None,
         mean: torch.Tensor = None,
         frame_time: torch.tensor = None,
@@ -50,9 +51,14 @@ class Losses:
            Shape: (batch_size, joints)
 
         d6: torch.Tensor
-            Tensor of the 6d representation for every joint
+            Tensor of the ground truth 6d representation for every joint
             Shape: (batch_size, joints, 6)
 
+        d6_pred: torch.Tensor
+            Tensor of the predicted 6d representation for every joint
+            Shape: (batch_size, joints, 6)
+
+        
         log_var: torch.Tensor
             Log variance, where the variance is used for the latent space vector sampling
             Shape: (batch_size, N_latent, N_latent)
@@ -94,6 +100,7 @@ class Losses:
             assert consec_frames is not None
             
             self.d6 = d6
+            self.d6_pred = d6_pred
             #self.log_var = log_var
             self.mean = mean
             self.children_mask = children_mask
@@ -122,6 +129,13 @@ class Losses:
                                       6,
             )
 
+            self.d6_pred = self.d6_pred.reshape(self.N_consecs,
+                                      self.consec_frames,
+                                      self.N_joints,
+                                      6,
+            )
+
+            
             self.mask = self.mask.reshape(self.N_consecs,
                                           self.consec_frames,
                                           self.N_joints,
@@ -133,7 +147,8 @@ class Losses:
             )
             
             
-    def reconstruction_loss():
+    def reconstruction_loss(self,
+    ) -> None:
         """
         Calculate reconstruction loss for all joint positions
 
@@ -153,7 +168,8 @@ class Losses:
 
         return recn_loss
 
-    def reconstruction_root_children_loss():
+    def reconstruction_root_children_loss(self,
+    ) -> None:
         """
         Calculate reconstruction loss for joint positions,
         where the joint is directly connected to the root
@@ -174,7 +190,8 @@ class Losses:
 
         return recn_loss_root_children
     
-    def velocity_loss():
+    def velocity_loss(self,
+    ) -> None:
         """
         Calculate velocity loss for all joint position velocities
         
@@ -194,7 +211,8 @@ class Losses:
 
         return vel_loss
 
-    def jerk_loss():
+    def jerk_loss(self,
+    ) -> None:
         """
         Calculate jerk loss for all joint position accelaration changing rates
         
@@ -215,7 +233,8 @@ class Losses:
 
         return acc_loss
 
-    def d6_angle_loss():
+    def d6_angle_loss(self,
+    ) -> None:
         """
         Calculate jerk loss for all joint d6's
         
@@ -236,7 +255,8 @@ class Losses:
 
         return d6_loss
 
-    def kl_loss():
+    def kl_loss(self,
+    ) -> None:
         """
         Calculate kl-divergence loss for variational autoencoders
         
@@ -278,12 +298,12 @@ class Losses:
 
         if self.mode == "train":
             return {
-                "recn_loss": reconstruction_loss(),
-                "vel_loss": velocity_loss(),
-                "acc_loss": jerk_loss(),
-                "recn_loss_root_children": reconstruction_root_children_loss(),
-                "d6_loss": d6_angle_loss(),
+                "recn_loss": self.reconstruction_loss(),
+                "vel_loss": self.velocity_loss(),
+                "acc_loss": self.jerk_loss(),
+                "recn_loss_root_children": self.reconstruction_root_children_loss(),
+                "d6_loss": self.d6_angle_loss(),
                 #"kl_loss": kl_loss,
             }
 
-        return {"recn_loss": reconstruction_loss}
+        return {"recn_loss": self.reconstruction_loss()}

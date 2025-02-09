@@ -228,7 +228,7 @@ class Losses:
         """
 
         acc_loss = (
-                torch.norm(self.fk_pose[:,3:] - 3 * self.fk_pose[:,2:-1] + 3 * self.fk_pose[:,1:-2] - self.fk_poses[:,:-3], dim=-1) / (self.frame_time**3) * self.mask[:,3:]
+                torch.norm(self.fk_pose[:,3:] - 3 * self.fk_pose[:,2:-1] + 3 * self.fk_pose[:,1:-2] - self.fk_pose[:,:-3], dim=-1) / (self.frame_time**3) * self.mask[:,3:]
         ).sum() / self.mask[:,3:].sum()
 
         return acc_loss

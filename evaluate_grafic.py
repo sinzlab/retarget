@@ -18,7 +18,7 @@ if __name__ == "__main__":
 
     #Load pretrained model
     print("LOAD PRETRAINED MODEL")
-    model_name = "dazzling-capybara-237"
+    model_name = "grateful-forest-348"
     checkpoint = torch.load(f"./models/local/{model_name}_latest_checkpoint.tar", map_location = "cpu")
     #model = TransformerAutoEncoder.from_pretrained(f'local/{model_name}_best_model.pt')
     model = TransformerAutoEncoder.from_pretrained(checkpoint["epoch"], checkpoint = checkpoint)
@@ -44,7 +44,7 @@ if __name__ == "__main__":
 
     with torch.inference_mode():
         # encode the animation into the latent space
-        latent, logvar = model.encoder(batch.x, batch.pos, batch.edge_index, mask=mask)
+        latent = model.encoder(batch.x, batch.pos, batch.edge_index, mask=mask)
 
         # decode the latent space back into the animation
         y_pred = model.decoder(latent, batch.pos, batch.edge_index, mask=mask)

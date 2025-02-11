@@ -205,9 +205,9 @@ class Losses:
 
         torch.Tensor
         """
-
+        
         vel_loss = (
-                torch.norm(self.position[:,1:] - self.fk_pose[:,:-1], dim=-1) * self.mask[:,1:]).sum() / self.mask[:,1:].sum()
+                torch.norm((self.position[:,1:] - self.position[:,:-1]) - (self.fk_pose[:,1:] - self.fk_pose[:,:-1]), dim=-1) * self.mask[:,1:]).sum() / self.mask[:,1:].sum()
 
         return vel_loss
 

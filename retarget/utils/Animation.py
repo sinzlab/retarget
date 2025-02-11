@@ -227,6 +227,7 @@ class Animation:
             else:
                 idx_prev = (i-1)*stride
                 position_prev = torch.Tensor(self.positions[idx_prev])
+                rotation_prev = torch.Tensor(np.array(self.rotations[idx_prev]))
 
             position_prev = position_prev - position_prev[0]
 
@@ -256,8 +257,6 @@ class Animation:
                     parents=parents,
                 )
             )
-
-            rotation_prev = copy.deepcopy(rotation)
 
         return data
 

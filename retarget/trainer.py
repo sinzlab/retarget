@@ -69,7 +69,7 @@ def trainer(
         cycle_mult=1,
         max_lr=1e-3,
         min_lr=1e-5,
-        warmup_steps=200,
+        warmup_steps=50,
         gamma=1e-1 ** (1 / num_epochs),
         last_epoch=-1,
     )
@@ -145,13 +145,19 @@ def trainer(
             #    torch.norm(position - fk_pose,dim=-1) * children_mask
             #).sum() / children_mask.sum()
             #d6_loss = (torch.norm(d6 - y_pred,dim=-1) * mask).sum() / mask.sum()
-            
+
+            if epoch % 10 == 0:
+                if epoch == 0:
+                    jerk_scale = 1
+                else:
+                    jerk_scale += 100
+                    
             loss = (
                 100 * train_losses["recn_loss"]
                 + 100 * train_losses["recn_loss_root_children"]
                 + 5 * train_losses["d6_loss"]
                 + 100 * train_losses["vel_loss"]
-                + 100 * acc_loss_scale * train_losses["acc_loss"]
+                + jerk_scale * acc_loss_scale * train_losses["acc_loss"]
             )
 
             loss = loss.mean()

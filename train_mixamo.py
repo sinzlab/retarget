@@ -36,10 +36,10 @@ if __name__ == "__main__":
     # training parameters
     resume = False#torch.load("./models/local/helpful-elevator-168_latest_checkpoint.tar", map_location="cpu")  # 'local/model:49'
     resume_from_epoch = 0 #resume["epoch"]
-    num_epochs = 30
+    num_epochs = 60
 
     # model parameters
-    batch_size = 256
+    batch_size = 128
     d_model = 64
     d_input = 9
     nhead = 8
@@ -48,7 +48,7 @@ if __name__ == "__main__":
     wandb.init(entity="sinzlab", project="retarget", dir="./.wandb")
 
     # Data
-    train_data = MixamoDataset(directory="/user/kyang2/u12303/skip-dataset/train", mode="train")
+    train_data = MixamoDataset(directory="/user/kyang2/u12303/skip-dataset/train_same_cmu_cleaned", mode="train")
     test_data = MixamoDataset(directory="/user/kyang2/u12303/skip-dataset/test", mode="test")
     train_dataloader = DataLoader(train_data, batch_size=batch_size, shuffle=True, collate_fn = collate_fn)
     test_dataloader = DataLoader(test_data, batch_size=batch_size, collate_fn = collate_fn)

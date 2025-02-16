@@ -133,31 +133,12 @@ def trainer(
                 consec_frames = 8,
             ).losses
 
-            # compute losses
-            #recn_loss = (
-            #    torch.norm(position - fk_pose,dim=-1) * mask
-            #).sum() / mask.sum()
-            #vel_loss = (torch.norm(v_t - v_t_pred,dim=-1) * mask).sum() / mask.sum()
-            #acc_loss = (
-            #    torch.norm(a_t_pred - a_t_minus_1_pred,dim=-1) * mask
-            #).sum() / mask.sum()
-            #recn_loss_root_children = (
-            #    torch.norm(position - fk_pose,dim=-1) * children_mask
-            #).sum() / children_mask.sum()
-            #d6_loss = (torch.norm(d6 - y_pred,dim=-1) * mask).sum() / mask.sum()
-
-            if epoch % 10 == 0:
-                if epoch == 0:
-                    jerk_scale = 1
-                else:
-                    jerk_scale += 100
-                    
             loss = (
                 100 * train_losses["recn_loss"]
                 + 100 * train_losses["recn_loss_root_children"]
                 + 5 * train_losses["d6_loss"]
                 + 100 * train_losses["vel_loss"]
-                + jerk_scale * acc_loss_scale * train_losses["acc_loss"]
+                + 100 * acc_loss_scale * train_losses["acc_loss"]
             )
 
             loss = loss.mean()

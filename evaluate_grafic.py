@@ -18,10 +18,11 @@ if __name__ == "__main__":
 
     #Load pretrained model
     print("LOAD PRETRAINED MODEL")
-    model_name = "grateful-forest-348"
+    model_name = "deft-yogurt-370"
     checkpoint = torch.load(f"./models/local/{model_name}_latest_checkpoint.tar", map_location = "cpu")
     #model = TransformerAutoEncoder.from_pretrained(f'local/{model_name}_best_model.pt')
     model = TransformerAutoEncoder.from_pretrained(checkpoint["epoch"], checkpoint = checkpoint)
+    model.eval()
     tokenizer = Tokenizer()
 
     #string = "Capoeira"
@@ -32,8 +33,10 @@ if __name__ == "__main__":
     if string == "Capoeira":
         animation, new_names, _ = load('/user/kyang2/u12303/skip-dataset/train/Amy/Capoeira.bvh',ground_feet=False)
     else:
-        animation, new_names, _ = load('/user/kyang2/u12303/skip-dataset/test/bandai-namco/dataset-1_bow_old_001.bvh',ground_feet=False)
+        animation, new_names, _ = load(r'/user/kyang2/u12303/skip-dataset/test/Kaya/Getting Up.bvh',ground_feet=False)
+        #animation, new_names, _ = load('/user/kyang2/u12303/skip-dataset/test/bandai-namco/dataset-1_bow_old_001.bvh',ground_feet=False)
 
+        
     #
     animation.positions[...,:,:] -= animation.positions[...,0:1,:]
     # convert the animation to a graph
@@ -66,5 +69,9 @@ if __name__ == "__main__":
         save(f"Capoeira_{model_name}.bvh", recon_anim)
     else:
         save(f"bow_{model_name}.bvh", recon_anim)
-    #save("bow_no_traj_truth.bvh",animation)
+
+    animation.positions *= 170
+    animation.offsets *= 170
+    
+    save("bow_no_traj_run_truth.bvh",animation)
     #save("Capoeira_no_traj_truth.bvh",animation)

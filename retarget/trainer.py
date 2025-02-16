@@ -61,6 +61,7 @@ def trainer(
 
     fps = 1/30    
     losses = []
+    root_trajectory_losses = []
     prev_best_val_loss = 1e6
     
     lr_scheduler = CosineAnnealingWarmupRestarts(
@@ -81,6 +82,7 @@ def trainer(
         n_batches = len(dataloader)
         batch_idx = 0
         epoch_loss = []
+        epoch_root_trajectory_loss = []
         pbar = tqdm(dataloader)
         # lr_scheduler = get_cosine_schedule_with_warmup(optimizer, num_warmup_steps=200, num_training_steps=len(dataloader))
         # lr_scheduler = get_cosine_with_hard_restarts_schedule_with_warmup(optimizer, num_warmup_steps=200, num_training_steps=len(dataloader) * num_epochs, num_cycles=num_epochs)
@@ -97,7 +99,8 @@ def trainer(
             mask = mask_from_batch(batch)
             position = graph_to_batch(batch.position, mask)
             d6 = graph_to_batch(batch.d6, mask)
-
+            root_trajectory = graph_to_batch(batch.root_trajectory, mask)
+            
             # Set optimiser grad to zero
             optimizer.zero_grad()
 
@@ -107,7 +110,7 @@ def trainer(
             )
 
             fk_pose, edge_indexs = fk_for_batch(
-                batch, y_pred, quater=False, rotations_fmt="d6", device=device
+                batch, y_pred[:,:,:6], quater=False, rotations_fmt="d6", device=device
             )
             fk_pose = fk_pose - fk_pose[..., 0:1, :]
 
@@ -125,7 +128,9 @@ def trainer(
                 mask=mask,
                 children_mask=children_mask,
                 d6=d6,
-                d6_pred = y_pred,
+                d6_pred = y_pred[:,:,:6],
+                root_trajectory = root_trajectory,
+                root_trajectory_pred = y_pred[:,:,6:],
                 #log_var=log_var,
                 mean=mean,
                 frame_time=fps,
@@ -139,6 +144,7 @@ def trainer(
                 + 5 * train_losses["d6_loss"]
                 + 100 * train_losses["vel_loss"]
                 + 100 * acc_loss_scale * train_losses["acc_loss"]
+                + 100 * train_losses["root_trajectory_loss"]
             )
 
             loss = loss.mean()
@@ -150,8 +156,11 @@ def trainer(
 
             optimizer.step()
             losses.append(train_losses["recn_loss"].item() * 170)
+            root_trajectory_losses.append(train_losses["root_trajectory_loss"].item() * 170)
+            
             epoch_loss.append(losses[-1])
-
+            epoch_root_trajectory_loss.append(root_trajectory_losses[-1])
+            
             pbar.set_description(
                 f"Epoch [{epoch+1}/{num_epochs}], Loss: {np.mean(epoch_loss[-10:])}"
             )
@@ -162,6 +171,7 @@ def trainer(
                     "angle loss": train_losses["d6_loss"].item(),
                     "velocity loss": 170 * train_losses["vel_loss"].item() / fps,
                     "jerk loss": 170 * train_losses["acc_loss"].item() * fps,
+                    "root traj loss": 170 * train_losses["root_trajectory_loss"].item()
                 }
             )
 
@@ -170,6 +180,7 @@ def trainer(
         # evaluate
         with torch.no_grad():
             val_losses = []
+            val_root_trajectory_losses = []
             for batch in test_dataloader:
 
                 batch = loaded_graphs_to_batch(batch)
@@ -178,6 +189,7 @@ def trainer(
 
                 mask = mask_from_batch(batch).to(device)
                 position = graph_to_batch(batch.position, mask).to(device)
+                root_trajectory = graph_to_batch(batch.root_trajectory, mask).to(device)
 
                 y_pred, mean = model(
                     batch.x.to(device),
@@ -187,7 +199,7 @@ def trainer(
                 )
 
                 fk_pose, edge_indexs = fk_for_batch(
-                    batch, y_pred, quater=False, rotations_fmt="d6", device=device
+                    batch, y_pred[:,:,:6], quater=False, rotations_fmt="d6", device=device
                 )
                 fk_pose = fk_pose - fk_pose[..., 0:1, :]
 
@@ -195,11 +207,14 @@ def trainer(
                 val_loss = Losses(
                     fk_pose=fk_pose,
                     position=position,
+                    root_trajectory = root_trajectory,
+                    root_trajectory_pred = y_pred[:,:,6:],
                     mask=mask,
                     mode="validation",
                 ).losses
 
                 val_losses.append(170 * val_loss["recn_loss"].item())
+                val_root_trajectory_losses.append(170 * val_loss["root_trajectory_loss"].item())
 
         if np.mean(val_losses) < prev_best_val_loss:
             prev_best_val_loss = np.mean(val_losses)
@@ -222,4 +237,12 @@ def trainer(
         print(
             f"Epoch [{epoch+1}/{num_epochs}], Batch [{batch_idx} / {n_batches}] Loss: {np.mean(epoch_loss)} | val_losses: {np.mean(val_losses)}"
         )
-        wandb.log({"mean loss": np.mean(epoch_loss), "val_loss": np.mean(val_losses)})
+        print(
+            f"Epoch [{epoch+1}/{num_epochs}], Batch [{batch_idx} / {n_batches}] Loss: {np.mean(epoch_root_trajectory_loss)} | val_losses: {np.mean(val_root_trajectory_losses)}"
+        )
+        wandb.log({
+            "mean loss": np.mean(epoch_loss),
+            "mean root traj loss": np.mean(epoch_root_trajectory_loss),
+            "val_loss": np.mean(val_losses),
+            "val root traj loss": np.mean(val_root_trajectory_losses),
+        })

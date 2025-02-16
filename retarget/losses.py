@@ -22,6 +22,8 @@ class Losses:
         children_mask: torch.Tensor = None,
         d6: torch.Tensor = None,
         d6_pred: torch.Tensor = None,
+        root_trajectory: torch.Tensor = None,
+        root_trajectory_pred: torch.Tensor = None,
         #log_var: torch.Tensor = None,
         mean: torch.Tensor = None,
         frame_time: torch.tensor = None,
@@ -58,6 +60,14 @@ class Losses:
             Tensor of the predicted 6d representation for every joint
             Shape: (batch_size, joints, 6)
 
+        root_trajectory: torch.Tensor
+            Tensor of the predicted root trajectory, where all joitns except for zero is masked to zero
+            Shape: (batch_size, joints, 3)
+
+        root_trajectory: torch.Tensor
+            Tensor of the predicted root trajectory
+            Shape: (batch_size, joints, 3)
+
         
         log_var: torch.Tensor
             Log variance, where the variance is used for the latent space vector sampling
@@ -86,6 +96,8 @@ class Losses:
 
         self.fk_pose = fk_pose
         self.position = position
+        self.root_trajectory = root_trajectory
+        self.root_trajectory_pred = root_trajectory_pred
         self.mask = mask
         self.mode = mode
 
@@ -134,6 +146,18 @@ class Losses:
                                       self.N_joints,
                                       6,
             )
+            
+#            self.root_trajectory = self.root_trajectory.reshape(self.N_consecs,
+#                                      self.consec_frames,
+#                                      self.N_joints,
+#                                      3,
+#            )
+
+#            self.root_trajectory_pred = self.root_trajectory_pred.reshape(self.N_consecs,
+#                                      self.consec_frames,
+#                                      self.N_joints,
+#                                      3,
+#            )
 
             
             self.mask = self.mask.reshape(self.N_consecs,
@@ -236,7 +260,7 @@ class Losses:
     def d6_angle_loss(self,
     ) -> None:
         """
-        Calculate jerk loss for all joint d6's
+        Calculate distance loss for all joint d6's
         
         Parameters
         ----------
@@ -255,6 +279,29 @@ class Losses:
 
         return d6_loss
 
+    def root_trajectory_loss(self,
+    ) -> None:
+        """
+        Calculate root trajectory loss for only the zeroth joint
+        
+        Parameters
+        ----------
+
+        None
+
+        Returns
+        -------
+
+        torch.Tensor
+        """
+
+        root_trajectory_loss = (
+            torch.norm(self.root_trajectory[:,0:1] - self.root_trajectory_pred[:,0:1], dim=-1).mean()
+        )
+
+        return root_trajectory_loss
+
+    
     def kl_loss(self,
     ) -> None:
         """
@@ -303,7 +350,11 @@ class Losses:
                 "acc_loss": self.jerk_loss(),
                 "recn_loss_root_children": self.reconstruction_root_children_loss(),
                 "d6_loss": self.d6_angle_loss(),
+                "root_trajectory_loss": self.root_trajectory_loss(),
                 #"kl_loss": kl_loss,
             }
 
-        return {"recn_loss": self.reconstruction_loss()}
+        return {
+            "recn_loss": self.reconstruction_loss(),
+            "root_trajectory_loss": self.root_trajectory_loss(),
+        }

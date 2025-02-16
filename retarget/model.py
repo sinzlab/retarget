@@ -100,9 +100,9 @@ class TransformerAutoEncoder(nn.Module):
     ):
         super(TransformerAutoEncoder, self).__init__()
         self.encoder = TransformerEncoder(
-            d_input=d_input + 6, d_model=d_model, nhead=nhead, num_layers=num_layers
+            d_input=d_input + 9, d_model=d_model, nhead=nhead, num_layers=num_layers
         )
-        self.decoder = TransformerDecoder(d_input=d_input - 3, d_model=d_model)
+        self.decoder = TransformerDecoder(d_input=d_input, d_model=d_model)
 
     def forward(self, x, t_pose, edge_index, mask=None):
         mean = self.encoder(x, t_pose, edge_index, mask=mask)

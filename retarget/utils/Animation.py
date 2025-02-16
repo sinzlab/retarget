@@ -219,6 +219,8 @@ class Animation:
             d6 = quat_2_d6(rotation)
                 
             position = torch.Tensor(position)
+            root_trajectory = torch.zeros_like(position)
+            root_trajectory[0] += position[0]
             position = position - position[0]
 
             if i * stride == 0:
@@ -242,7 +244,7 @@ class Animation:
             edges = torch.LongTensor(self.edges.T)
 
 
-            features = torch.cat([d6, position, position_prev, velocity], dim=-1)
+            features = torch.cat([d6, position, position_prev, velocity, root_trajectory], dim=-1)
 
             data.append(
                 Data(
@@ -251,6 +253,7 @@ class Animation:
                     rotation=rotation,
                     position=position,
                     d6=d6,
+                    root_trajectory = root_trajectory,
                     rotation_prev = rotation_prev,
                     pos=t_pose,
                     offsets=offsets,

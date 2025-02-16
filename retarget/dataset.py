@@ -64,10 +64,6 @@ class MixamoDataset(Dataset):
         self.data = []
         self.data_idx = []
         
-        # If mode = Test, then also include the trajectory positions
-        if self.ground_feet:
-            self.trajectory = []
-
         # Initialize empty list to put in the previous frames of a given frame
         # This is used for the velocity loss
         # Also Initialize empty list with frame times between frames
@@ -94,10 +90,6 @@ class MixamoDataset(Dataset):
             self.data = self.data + animation_graphs
             self.data_idx += list(range(total_frames_currently, total_frames_currently + n_graphs))
             
-            # Save the root trajectory of animation (List of len N_frames with torch tensors of shape (1,3))
-            if self.ground_feet:
-                self.trajectory += list(torch.tensor(animation.positions[..., 0:1, :]))
-
             #if self.mode == "train":
             #    self.time = self.time + [time] * n_graphs
 
@@ -115,30 +107,16 @@ class MixamoDataset(Dataset):
     def __len__(self):
         return len(self.data) // self.cons_q
 
-    def get_one_item(self, idx, scaled_offset = None):
+    def get_one_item(self, idx, global_skel_scale = None):
         item = self.data[self.data_idx[idx]].clone()
-
-        if self.ground_feet:
-            trajectory = self.trajectory[idx]
 
         if self.mode == "train":
 
             # If the mode is "train", then also define the frame time
             frame_time = 1/30 #self.time[idx]
 
-            #scaled_offsets = item.offsets.numpy().copy()
-            #if np.random.rand() < 0.5:
-            #    scaled_offsets = scaled_offsets * np.random.uniform(
-            #        0.5, 1.5, size=scaled_offsets.shape
-            #    )
-
-            # if np.random.rand() < 0.1:
-            #     scaled_offsets = scaled_offsets + np.random.uniform(-5, 5, size=scaled_offsets.shape)
-
-            #if np.random.rand() < 0.25:
-            #    scaled_offsets = scaled_offsets * np.random.uniform(0.5, 1.5)
-            scaled_offsets = scaled_offset.copy()
-            scaled_offsets_prev = scaled_offset.copy()
+            scaled_offsets = item.offsets.numpy().copy() * global_skel_scale
+            scaled_offsets_prev = scaled_offsets.copy()
             
             # For original frame
             parents = item.parents.numpy()
@@ -156,6 +134,7 @@ class MixamoDataset(Dataset):
             
             t_pose = AnimationStructure.t_pose(scaled_offsets, edges)
 
+            item.root_trajectory *= global_skel_scale
             item.position = torch.Tensor(position)
             item.x[:,6:9] = torch.Tensor(position).clone()
             item.offsets = torch.Tensor(scaled_offsets)
@@ -163,16 +142,10 @@ class MixamoDataset(Dataset):
 
             #Set the scaled skeletons new velocity and previous frame
             item.x[:,9:12] = torch.Tensor(position_prev).clone()
-            item.x[:,12:] = torch.Tensor(position - position_prev).clone()
+            item.x[:,12:15] = torch.Tensor(position - position_prev).clone()
+            item.x[:,15:] *= global_skel_scale 
             
-            if self.ground_feet:
-                return item, frame_time, trajectory
-
             return item, frame_time
-
-        if self.ground_feet:
-            return item, trajectory
-
         return item
 
     def __getitem__(self,idx):
@@ -182,19 +155,21 @@ class MixamoDataset(Dataset):
         if self.mode == "train":
             frame_time = []
 
-            item_example = self.data[self.data_idx[idx*self.cons_q]].clone()
-            scaled_offset = item_example.offsets.numpy().copy()
-            if np.random.rand() < 0.5:
-                scaled_offset = scaled_offset * np.random.uniform(
-                    0.5, 1.5, size=scaled_offset.shape
-                )
+            #item_example = self.data[self.data_idx[idx*self.cons_q]].clone()
+            #scaled_offset = item_example.offsets.numpy().copy()
+            #if np.random.rand() < 0.5:
+            #    scaled_offset = scaled_offset * np.random.uniform(
+            #        0.5, 1.5, size=scaled_offset.shape
+            #    )
 
             if np.random.rand() < 0.25:
-                scaled_offset = scaled_offset * np.random.uniform(0.5, 1.5)
+                global_skel_scale = np.random.uniform(0.5, 1.5)
+            else:
+                global_skel_scale = 1.
 
             
             for i in range(self.cons_q):
-                it, f_time = self.get_one_item(idx * self.cons_q + i, scaled_offset)
+                it, f_time = self.get_one_item(idx * self.cons_q + i, global_skel_scale)
                 item.append(it)
                 frame_time.append(f_time)
 

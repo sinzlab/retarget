@@ -24,7 +24,7 @@ class Losses:
         d6_pred: torch.Tensor = None,
         root_trajectory: torch.Tensor = None,
         root_trajectory_pred: torch.Tensor = None,
-        #log_var: torch.Tensor = None,
+        # log_var: torch.Tensor = None,
         mean: torch.Tensor = None,
         frame_time: torch.tensor = None,
         consec_frames: int = None,
@@ -68,7 +68,7 @@ class Losses:
             Tensor of the predicted root trajectory
             Shape: (batch_size, joints, 3)
 
-        
+
         log_var: torch.Tensor
             Log variance, where the variance is used for the latent space vector sampling
             Shape: (batch_size, N_latent, N_latent)
@@ -84,7 +84,7 @@ class Losses:
 
         consec_frames: int
             Integer, defining how many consecutive frames where loaded
-        
+
         mode: str
             Mode, to define if the losses if for training or validation
 
@@ -106,14 +106,14 @@ class Losses:
             # Check that all values used for train is not None
             assert children_mask is not None
             assert d6 is not None
-            #assert log_var is not None
+            # assert log_var is not None
             assert frame_time is not None
             assert mean is not None
             assert consec_frames is not None
-            
+
             self.d6 = d6
             self.d6_pred = d6_pred
-            #self.log_var = log_var
+            # self.log_var = log_var
             self.mean = mean
             self.children_mask = children_mask
             self.frame_time = frame_time
@@ -123,55 +123,60 @@ class Losses:
             self.N_joints = self.position.shape[1]
             self.N_consecs = self.batch_size // self.consec_frames
 
-            self.fk_pose = self.fk_pose.reshape(self.N_consecs,
-                                                self.consec_frames,
-                                                self.N_joints,
-                                                3,
+            self.fk_pose = self.fk_pose.reshape(
+                self.N_consecs,
+                self.consec_frames,
+                self.N_joints,
+                3,
             )
 
-            self.position = self.position.reshape(self.N_consecs,
-                                                  self.consec_frames,
-                                                  self.N_joints,
-                                                  3,
+            self.position = self.position.reshape(
+                self.N_consecs,
+                self.consec_frames,
+                self.N_joints,
+                3,
             )
 
-            self.d6 = self.d6.reshape(self.N_consecs,
-                                      self.consec_frames,
-                                      self.N_joints,
-                                      6,
+            self.d6 = self.d6.reshape(
+                self.N_consecs,
+                self.consec_frames,
+                self.N_joints,
+                6,
             )
 
-            self.d6_pred = self.d6_pred.reshape(self.N_consecs,
-                                      self.consec_frames,
-                                      self.N_joints,
-                                      6,
-            )
-            
-#            self.root_trajectory = self.root_trajectory.reshape(self.N_consecs,
-#                                      self.consec_frames,
-#                                      self.N_joints,
-#                                      3,
-#            )
-
-#            self.root_trajectory_pred = self.root_trajectory_pred.reshape(self.N_consecs,
-#                                      self.consec_frames,
-#                                      self.N_joints,
-#                                      3,
-#            )
-
-            
-            self.mask = self.mask.reshape(self.N_consecs,
-                                          self.consec_frames,
-                                          self.N_joints,
+            self.d6_pred = self.d6_pred.reshape(
+                self.N_consecs,
+                self.consec_frames,
+                self.N_joints,
+                6,
             )
 
-            self.children_mask = self.children_mask.reshape(self.N_consecs,
-                                                            self.consec_frames,
-                                                            self.N_joints,
+            #            self.root_trajectory = self.root_trajectory.reshape(self.N_consecs,
+            #                                      self.consec_frames,
+            #                                      self.N_joints,
+            #                                      3,
+            #            )
+
+            #            self.root_trajectory_pred = self.root_trajectory_pred.reshape(self.N_consecs,
+            #                                      self.consec_frames,
+            #                                      self.N_joints,
+            #                                      3,
+            #            )
+
+            self.mask = self.mask.reshape(
+                self.N_consecs,
+                self.consec_frames,
+                self.N_joints,
             )
-            
-            
-    def reconstruction_loss(self,
+
+            self.children_mask = self.children_mask.reshape(
+                self.N_consecs,
+                self.consec_frames,
+                self.N_joints,
+            )
+
+    def reconstruction_loss(
+        self,
     ) -> None:
         """
         Calculate reconstruction loss for all joint positions
@@ -192,7 +197,8 @@ class Losses:
 
         return recn_loss
 
-    def reconstruction_root_children_loss(self,
+    def reconstruction_root_children_loss(
+        self,
     ) -> None:
         """
         Calculate reconstruction loss for joint positions,
@@ -213,12 +219,13 @@ class Losses:
         ).sum() / self.children_mask.sum()
 
         return recn_loss_root_children
-    
-    def velocity_loss(self,
+
+    def velocity_loss(
+        self,
     ) -> None:
         """
         Calculate velocity loss for all joint position velocities
-        
+
         Parameters
         ----------
 
@@ -229,17 +236,24 @@ class Losses:
 
         torch.Tensor
         """
-        
+
         vel_loss = (
-                torch.norm((self.position[:,1:] - self.position[:,:-1]) - (self.fk_pose[:,1:] - self.fk_pose[:,:-1]), dim=-1) * self.mask[:,1:]).sum() / self.mask[:,1:].sum()
+            torch.norm(
+                (self.position[:, 1:] - self.position[:, :-1])
+                - (self.fk_pose[:, 1:] - self.fk_pose[:, :-1]),
+                dim=-1,
+            )
+            * self.mask[:, 1:]
+        ).sum() / self.mask[:, 1:].sum()
 
         return vel_loss
 
-    def jerk_loss(self,
+    def jerk_loss(
+        self,
     ) -> None:
         """
         Calculate jerk loss for all joint position accelaration changing rates
-        
+
         Parameters
         ----------
 
@@ -252,16 +266,25 @@ class Losses:
         """
 
         acc_loss = (
-                torch.norm(self.fk_pose[:,3:] - 3 * self.fk_pose[:,2:-1] + 3 * self.fk_pose[:,1:-2] - self.fk_pose[:,:-3], dim=-1) / (self.frame_time**3) * self.mask[:,3:]
-        ).sum() / self.mask[:,3:].sum()
+            torch.norm(
+                self.fk_pose[:, 3:]
+                - 3 * self.fk_pose[:, 2:-1]
+                + 3 * self.fk_pose[:, 1:-2]
+                - self.fk_pose[:, :-3],
+                dim=-1,
+            )
+            / (self.frame_time**3)
+            * self.mask[:, 3:]
+        ).sum() / self.mask[:, 3:].sum()
 
         return acc_loss
 
-    def d6_angle_loss(self,
+    def d6_angle_loss(
+        self,
     ) -> None:
         """
         Calculate distance loss for all joint d6's
-        
+
         Parameters
         ----------
 
@@ -279,11 +302,12 @@ class Losses:
 
         return d6_loss
 
-    def root_trajectory_loss(self,
+    def root_trajectory_loss(
+        self,
     ) -> None:
         """
         Calculate root trajectory loss for only the zeroth joint
-        
+
         Parameters
         ----------
 
@@ -295,18 +319,18 @@ class Losses:
         torch.Tensor
         """
 
-        root_trajectory_loss = (
-            torch.norm(self.root_trajectory[:,0:1] - self.root_trajectory_pred[:,0:1], dim=-1).mean()
-        )
+        root_trajectory_loss = torch.norm(
+            self.root_trajectory[:, 0:1] - self.root_trajectory_pred[:, 0:1], dim=-1
+        ).mean()
 
         return root_trajectory_loss
 
-    
-    def kl_loss(self,
+    def kl_loss(
+        self,
     ) -> None:
         """
         Calculate kl-divergence loss for variational autoencoders
-        
+
         Parameters
         ----------
 
@@ -317,13 +341,13 @@ class Losses:
 
         torch.Tensor
         """
-        
+
         kl_loss = -0.5 * torch.sum(
             1 + self.log_var - self.mean.pow(2) - self.log_var.exp()
         )
 
         return kl_loss
-    
+
     @property
     def losses(
         self,
@@ -351,7 +375,7 @@ class Losses:
                 "recn_loss_root_children": self.reconstruction_root_children_loss(),
                 "d6_loss": self.d6_angle_loss(),
                 "root_trajectory_loss": self.root_trajectory_loss(),
-                #"kl_loss": kl_loss,
+                # "kl_loss": kl_loss,
             }
 
         return {

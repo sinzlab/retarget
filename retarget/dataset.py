@@ -11,7 +11,7 @@ from retarget.utils.Quaternions_old import Quaternions, quat_2_d6
 
 
 class MixamoDataset(Dataset):
-    def __init__(self, directory, mode="train", ground_feet=False, cons_q = 8):
+    def __init__(self, directory, mode="train", ground_feet=False, cons_q=8):
         super().__init__()
 
         animations = {}
@@ -63,34 +63,36 @@ class MixamoDataset(Dataset):
         # Create Empty list to fill with frames as graph
         self.data = []
         self.data_idx = []
-        
+
         # Initialize empty list to put in the previous frames of a given frame
         # This is used for the velocity loss
         # Also Initialize empty list with frame times between frames
         # self.data_prev[idx] stores the offset frame from the original frame.
-        #if mode == "train":
-            #self.time = []
+        # if mode == "train":
+        # self.time = []
 
         for animation, time in zip(self.animations, self.frame_time):
-            if 1/time > 100:
+            if 1 / time > 100:
                 animation_graphs = animation.as_graph(stride=4)
             else:
                 animation_graphs = animation.as_graph()
 
             length_animation = len(animation_graphs)
-            
+
             if length_animation < 8:
                 continue
-            
+
             n_graphs = length_animation // self.cons_q * self.cons_q
             animation_graphs = animation_graphs[:n_graphs]
-            
+
             total_frames_currently = len(self.data)
 
             self.data = self.data + animation_graphs
-            self.data_idx += list(range(total_frames_currently, total_frames_currently + n_graphs))
-            
-            #if self.mode == "train":
+            self.data_idx += list(
+                range(total_frames_currently, total_frames_currently + n_graphs)
+            )
+
+            # if self.mode == "train":
             #    self.time = self.time + [time] * n_graphs
 
         print("=== Mixamo Dataset Summary ===")
@@ -107,17 +109,17 @@ class MixamoDataset(Dataset):
     def __len__(self):
         return len(self.data) // self.cons_q
 
-    def get_one_item(self, idx, global_skel_scale = None):
+    def get_one_item(self, idx, global_skel_scale=None):
         item = self.data[self.data_idx[idx]].clone()
 
         if self.mode == "train":
 
             # If the mode is "train", then also define the frame time
-            frame_time = 1/30 #self.time[idx]
+            frame_time = 1 / 30  # self.time[idx]
 
             scaled_offsets = item.offsets.numpy().copy() * global_skel_scale
             scaled_offsets_prev = scaled_offsets.copy()
-            
+
             # For original frame
             parents = item.parents.numpy()
             rotation = item.rotation.numpy()
@@ -127,37 +129,37 @@ class MixamoDataset(Dataset):
             position = forward_rotations(
                 parents, scaled_offsets, Quaternions(rotation[None, ...])
             )[0]
-            
+
             position_prev = forward_rotations(
                 parents, scaled_offsets_prev, Quaternions(rotation_prev[None, ...])
             )[0]
-            
+
             t_pose = AnimationStructure.t_pose(scaled_offsets, edges)
 
             item.root_trajectory *= global_skel_scale
             item.position = torch.Tensor(position)
-            item.x[:,6:9] = torch.Tensor(position).clone()
+            item.x[:, 6:9] = torch.Tensor(position).clone()
             item.offsets = torch.Tensor(scaled_offsets)
             item.pos = torch.Tensor(t_pose)
 
-            #Set the scaled skeletons new velocity and previous frame
-            item.x[:,9:12] = torch.Tensor(position_prev).clone()
-            item.x[:,12:15] = torch.Tensor(position - position_prev).clone()
-            item.x[:,15:] *= global_skel_scale 
-            
+            # Set the scaled skeletons new velocity and previous frame
+            item.x[:, 9:12] = torch.Tensor(position_prev).clone()
+            item.x[:, 12:15] = torch.Tensor(position - position_prev).clone()
+            item.x[:, 15:] *= global_skel_scale
+
             return item, frame_time
         return item
 
-    def __getitem__(self,idx):
+    def __getitem__(self, idx):
 
         item = []
 
         if self.mode == "train":
             frame_time = []
 
-            #item_example = self.data[self.data_idx[idx*self.cons_q]].clone()
-            #scaled_offset = item_example.offsets.numpy().copy()
-            #if np.random.rand() < 0.5:
+            # item_example = self.data[self.data_idx[idx*self.cons_q]].clone()
+            # scaled_offset = item_example.offsets.numpy().copy()
+            # if np.random.rand() < 0.5:
             #    scaled_offset = scaled_offset * np.random.uniform(
             #        0.5, 1.5, size=scaled_offset.shape
             #    )
@@ -165,15 +167,14 @@ class MixamoDataset(Dataset):
             if np.random.rand() < 0.25:
                 global_skel_scale = np.random.uniform(0.5, 1.5)
             else:
-                global_skel_scale = 1.
+                global_skel_scale = 1.0
 
-            
             for i in range(self.cons_q):
                 it, f_time = self.get_one_item(idx * self.cons_q + i, global_skel_scale)
                 item.append(it)
                 frame_time.append(f_time)
 
-            return item#, frame_time
+            return item  # , frame_time
 
         for i in range(self.cons_q):
             it = self.get_one_item(idx * self.cons_q + i)

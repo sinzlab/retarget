@@ -213,11 +213,11 @@ class Animation:
 
         data = []
 
-        for i,(position, rotation) in enumerate(zip(
-                self.positions[::stride], self.rotations[::stride]
-            )):
+        for i, (position, rotation) in enumerate(
+            zip(self.positions[::stride], self.rotations[::stride])
+        ):
             d6 = quat_2_d6(rotation)
-                
+
             position = torch.Tensor(position)
             root_trajectory = torch.zeros_like(position)
             root_trajectory[0] += position[0]
@@ -227,14 +227,14 @@ class Animation:
                 position_prev = torch.Tensor(position)
                 rotation_prev = torch.Tensor(rotation)
             else:
-                idx_prev = (i-1)*stride
+                idx_prev = (i - 1) * stride
                 position_prev = torch.Tensor(self.positions[idx_prev])
                 rotation_prev = torch.Tensor(np.array(self.rotations[idx_prev]))
 
             position_prev = position_prev - position_prev[0]
 
             velocity = position - position_prev
-                
+
             rotation = torch.Tensor(rotation)
             d6 = torch.Tensor(d6)
 
@@ -243,8 +243,9 @@ class Animation:
             parents = torch.LongTensor(self.parents)
             edges = torch.LongTensor(self.edges.T)
 
-
-            features = torch.cat([d6, position, position_prev, velocity, root_trajectory], dim=-1)
+            features = torch.cat(
+                [d6, position, position_prev, velocity, root_trajectory], dim=-1
+            )
 
             data.append(
                 Data(
@@ -253,8 +254,8 @@ class Animation:
                     rotation=rotation,
                     position=position,
                     d6=d6,
-                    root_trajectory = root_trajectory,
-                    rotation_prev = rotation_prev,
+                    root_trajectory=root_trajectory,
+                    rotation_prev=rotation_prev,
                     pos=t_pose,
                     offsets=offsets,
                     parents=parents,

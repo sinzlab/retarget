@@ -144,7 +144,7 @@ def trainer(
                 + 5 * train_losses["d6_loss"]
                 + 100 * train_losses["vel_loss"]
                 + 100 * acc_loss_scale * train_losses["acc_loss"]
-                + 100 * train_losses["root_trajectory_loss"]
+                + 10 * train_losses["root_trajectory_loss"]
             )
 
             loss = loss.mean()

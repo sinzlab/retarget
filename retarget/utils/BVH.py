@@ -279,9 +279,10 @@ def load(filename, start=None, end=None, order=None, world=False, ground_feet=Fa
     # magintude should be 10
     factor = 10 / magnitude
     offsets *= factor
+    positions *= factor
 
-    if ground_feet:
-        positions *= factor
+    offsets /= 170
+    positions /= 170
 
     rotations = Quaternions.from_euler(np.radians(rotations), order=order, world=world)
 

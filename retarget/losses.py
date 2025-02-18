@@ -151,6 +151,16 @@ class Losses:
                 6,
             )
 
+            self.rotmat = d6_2_rotmat(
+                self.d6.reshape(self.N_consecs * self.consec_frames * self.N_joints, 6)
+            ).reshape(self.N_consecs, self.consec_frames, self.N_joints, 3, 3)
+
+            self.rotmat_pred = d6_2_rotmat(
+                self.d6_pred.reshape(
+                    self.N_consecs * self.consec_frames * self.N_joints, 6
+                )
+            ).reshape(self.N_consecs, self.consec_frames, self.N_joints, 3, 3)
+
             #            self.root_trajectory = self.root_trajectory.reshape(self.N_consecs,
             #                                      self.consec_frames,
             #                                      self.N_joints,
@@ -302,6 +312,37 @@ class Losses:
 
         return d6_loss
 
+    def geodesic_loss(
+        self,
+    ) -> None:
+        """
+        Calculate geodesic loss for all joint 3x3 rotation matrices
+
+        Parameters
+        ----------
+
+        None
+
+        Returns
+        -------
+
+        torch.Tensor
+        """
+        geodesic_loss = (
+            torch.acos(
+                (
+                    (self.rotmat_pred @ torch.transpose(self.rotmat, -2, -1))
+                    .diagonal(dim1=-2, dim2=-1)
+                    .sum(dim=-1)
+                    - 1
+                )
+                / 2
+            )
+            * self.mask
+        ).sum() / self.mask.sum()
+
+        return geodesic_loss
+
     def root_trajectory_loss(
         self,
     ) -> None:
@@ -375,6 +416,7 @@ class Losses:
                 "recn_loss_root_children": self.reconstruction_root_children_loss(),
                 "d6_loss": self.d6_angle_loss(),
                 "root_trajectory_loss": self.root_trajectory_loss(),
+                "geodesic_loss": self.geodesic_loss(),
                 # "kl_loss": kl_loss,
             }
 

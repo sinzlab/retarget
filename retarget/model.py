@@ -69,6 +69,32 @@ class TransformerEncoder(nn.Module):
         output = self.transformer_encoder(src, src_key_padding_mask=~mask)
         return output[:, 0]  # , output[:, 1]
 
+class TransformerEncoder_4_Decoder(nn.Module):
+    def __init__(
+        self, d_input, d_model, nhead, num_layers, dim_feedforward=512, dropout=0
+    ):
+        super(TransformerEncoder, self).__init__()
+        encoder_layer = nn.TransformerEncoderLayer(
+            d_model, nhead, dim_feedforward, dropout, batch_first=True
+        )
+        self.transformer_encoder = nn.TransformerEncoder(encoder_layer, num_layers)
+        self.pos_encoder = PositionalEncoding(d_model)
+        self.linear = nn.Linear(d_model, d_input)
+
+    def forward(self, z, t_pose, edge_index, mask=None):
+        src = z.unsqueeze(1).repeat(1, mask.shape[1], 1)
+        pe = self.pos_encoder(t_pose, edge_index)
+
+        pe = graph_to_batch(pe, mask)
+
+        src = src * pe  # multiply by positional encoding
+
+        output = self.transformer_encoder(src, src_key_padding_mask=~mask)
+
+        #Project d_model dim to output dim
+        output = self.linear(output)
+        return output
+
 
 class TransformerDecoder(nn.Module):
     def __init__(self, d_input, d_model):

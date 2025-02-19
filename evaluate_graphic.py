@@ -2,6 +2,7 @@ import torch
 from torch_geometric.loader import DataLoader
 import numpy as np
 
+from retarget.model import graph_to_batch, mask_from_batch
 from retarget.utils.Quaternions_old import d6_2_quat, Quaternions
 from retarget.utils.Animation import Animation
 from retarget.model import TransformerAutoEncoder
@@ -18,7 +19,7 @@ if __name__ == "__main__":
 
     # Load pretrained model
     print("LOAD PRETRAINED MODEL")
-    model_name = "deft-yogurt-370"
+    model_name = "zany-fire-381"
     checkpoint = torch.load(
         f"./models/local/{model_name}_latest_checkpoint.tar", map_location="cpu"
     )
@@ -39,14 +40,17 @@ if __name__ == "__main__":
             "/user/kyang2/u12303/skip-dataset/train/Amy/Capoeira.bvh", ground_feet=False
         )
     else:
-        animation, new_names, _ = load(
-            r"/user/kyang2/u12303/skip-dataset/test/Kaya/Getting Up.bvh",
-            ground_feet=False,
-        )
+        #animation, new_names, _ = load(
+        #    r"/user/kyang2/u12303/skip-dataset/test/Kaya/Getting Up.bvh",
+        #    ground_feet=False,
+        #)
         # animation, new_names, _ = load('/user/kyang2/u12303/skip-dataset/test/bandai-namco/dataset-1_bow_old_001.bvh',ground_feet=False)
+        animation, new_names, _ = load('/user/kyang2/u12303/skip-dataset/test/bandai-namco/dataset-1_run_active_001.bvh',ground_feet=False)
 
     #
-    animation.positions[..., :, :] -= animation.positions[..., 0:1, :]
+    animation.positions[..., :, 0:1] -= animation.positions[0:1, 0:1, 0:1]
+    animation.positions[..., :, 2:3] -= animation.positions[0:1, 0:1, 2:3]
+    
     # convert the animation to a graph
     data = animation.as_graph()
 
@@ -56,14 +60,20 @@ if __name__ == "__main__":
     with torch.inference_mode():
         # encode the animation into the latent space
         latent = model.encoder(batch.x, batch.pos, batch.edge_index, mask=mask)
+        root_trajectory_gt = graph_to_batch(batch.root_trajectory, mask)
 
         # decode the latent space back into the animation
         y_pred = model.decoder(latent, batch.pos, batch.edge_index, mask=mask)
 
-    fk_pose, edge_indexs = tokenizer.decode(batch, y_pred[..., :, :])
-    rotations = Quaternions(np.stack([d6_2_quat(d6) for d6 in y_pred[..., :, :]]))
-    positions = (fk_pose - fk_pose[..., 0:1, :]).detach().numpy()
+        fk_pose, edge_indexs = tokenizer.decode(batch, y_pred[..., :, :6])
+        rotations = Quaternions(np.stack([d6_2_quat(d6) for d6 in y_pred[..., :, :6]]))
+        positions = (fk_pose - fk_pose[..., 0:1, :]).detach().numpy()
+        root_trajectory = y_pred[...,0:1,6:]
+        root_trajectory[:,0,0] = torch.cumsum(root_trajectory[:,0,0],dim=-1)
+        root_trajectory[:,0,2] = torch.cumsum(root_trajectory[:,0,2],dim=-1)
+        print(torch.norm(root_trajectory - root_trajectory_gt[:,0:1,:],dim=-1).mean())
 
+        positions += root_trajectory.detach().numpy()
     # positions[:,0] = animation.positions[:,0]
 
     recon_anim = Animation(

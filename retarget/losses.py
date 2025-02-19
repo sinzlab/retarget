@@ -330,15 +330,14 @@ class Losses:
         """
         geodesic_loss = (
             torch.acos(
-                (
+                ((
                     (self.rotmat_pred @ torch.transpose(self.rotmat, -2, -1))
                     .diagonal(dim1=-2, dim2=-1)
                     .sum(dim=-1)
                     - 1
                 )
-                / 2
-            )
-            * self.mask
+                / 2) * self.mask
+            )* self.mask
         ).sum() / self.mask.sum()
 
         return geodesic_loss

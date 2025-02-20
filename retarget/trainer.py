@@ -141,8 +141,8 @@ def trainer(
             loss = (
                 100 * train_losses["recn_loss"]
                 + 100 * train_losses["recn_loss_root_children"]
-                + 5 * train_losses["d6_loss"]
-                #+ 5 * train_losses["geodesic_loss"]
+                #+ 5 * train_losses["d6_loss"]
+                + 5 * train_losses["geodesic_loss"]
                 + 10 * train_losses["vel_loss"]
                 + 10 * acc_loss_scale * train_losses["acc_loss"]
                 + 100 * train_losses["root_trajectory_loss"]
@@ -151,7 +151,6 @@ def trainer(
             loss = loss.mean()
 
             loss.backward()
-
             # clip gradients
             torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
 
@@ -172,7 +171,7 @@ def trainer(
                 {
                     "loss": 170 * train_losses["recn_loss"].item(),
                     "angle loss": train_losses["d6_loss"].item(),
-                    #"geodesic loss": train_losses["geodesic_loss"].item(),
+                    "geodesic loss": train_losses["geodesic_loss"].item(),
                     "velocity loss": 170 * train_losses["vel_loss"].item() / fps,
                     "jerk loss": 170 * train_losses["acc_loss"].item() * fps,
                     "root traj loss": 170 * train_losses["root_trajectory_loss"].item(),

@@ -69,17 +69,17 @@ class TransformerEncoder(nn.Module):
         output = self.transformer_encoder(src, src_key_padding_mask=~mask)
         return output[:, 0]  # , output[:, 1]
 
-class TransformerEncoder_4_Decoder(nn.Module):
+class TransformerEncoderDecoder(nn.Module):
     def __init__(
-        self, d_input, d_model, nhead, num_layers, dim_feedforward=512, dropout=0
+        self, d_output, d_model, nhead, num_layers, dim_feedforward=512, dropout=0
     ):
-        super(TransformerEncoder, self).__init__()
+        super(TransformerEncoderDecoder, self).__init__()
         encoder_layer = nn.TransformerEncoderLayer(
             d_model, nhead, dim_feedforward, dropout, batch_first=True
         )
         self.transformer_encoder = nn.TransformerEncoder(encoder_layer, num_layers)
         self.pos_encoder = PositionalEncoding(d_model)
-        self.linear = nn.Linear(d_model, d_input)
+        self.linear = nn.Linear(d_model, d_output)
 
     def forward(self, z, t_pose, edge_index, mask=None):
         src = z.unsqueeze(1).repeat(1, mask.shape[1], 1)
@@ -96,9 +96,9 @@ class TransformerEncoder_4_Decoder(nn.Module):
         return output
 
 
-class TransformerDecoder(nn.Module):
+class GraphSageDecoder(nn.Module):
     def __init__(self, d_input, d_model):
-        super(TransformerDecoder, self).__init__()
+        super(GraphSageDecoder, self).__init__()
         self.pos_encoder = PositionalEncoding(d_model)
         self.act = nn.GELU()
         self.gcn = GraphSAGE(
@@ -122,13 +122,17 @@ class TransformerDecoder(nn.Module):
 
 class TransformerAutoEncoder(nn.Module):
     def __init__(
-        self, d_input, d_model, nhead, num_layers, dim_feedforward=512, dropout=0.1
+            self, d_input, d_model, nhead, num_layers, dim_feedforward=512, dropout=0, transformer_decoder = False,
     ):
         super(TransformerAutoEncoder, self).__init__()
         self.encoder = TransformerEncoder(
             d_input=d_input + 9, d_model=d_model, nhead=nhead, num_layers=num_layers
         )
-        self.decoder = TransformerDecoder(d_input=d_input, d_model=d_model)
+
+        if transformer_decoder:
+            self.decoder = TransformerEncoderDecoder(d_output = d_input, d_model = d_model, nhead=nhead, num_layers = num_layers)
+        else:
+            self.decoder = GraphSageDecoder(d_input=d_input, d_model=d_model)
 
     def forward(self, x, t_pose, edge_index, mask=None):
         mean = self.encoder(x, t_pose, edge_index, mask=mask)

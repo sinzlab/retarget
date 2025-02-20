@@ -321,7 +321,7 @@ class Losses:
         # Clamp the acos input to valid range
         acos_input = torch.clamp((diag_sum - 1) / 2, min = -1 + 1e-7, max = 1 - 1e-7)
 
-        geodesic_lss = (torch.acos(acos_input) * torch.flatten(self.mask)).sum() / self.mask.sum()
+        geodesic_loss = (torch.acos(acos_input) * torch.flatten(self.mask)).sum() / self.mask.sum()
 
         return geodesic_loss
 

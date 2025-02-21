@@ -1,6 +1,7 @@
 import torch
 from torch_geometric.loader import DataLoader
 import numpy as np
+import matplotlib.pyplot as plt
 
 from retarget.model import graph_to_batch, mask_from_batch
 from retarget.utils.Quaternions_old import d6_2_quat, Quaternions
@@ -19,7 +20,7 @@ if __name__ == "__main__":
 
     # Load pretrained model
     print("LOAD PRETRAINED MODEL")
-    model_name = "zany-fire-381"
+    model_name = "dulcet-glitter-387"
     checkpoint = torch.load(
         f"./models/local/{model_name}_latest_checkpoint.tar", map_location="cpu"
     )
@@ -30,7 +31,7 @@ if __name__ == "__main__":
     model.eval()
     tokenizer = Tokenizer()
 
-    # string = "Capoeira"
+    string = "Capoeira"
 
     string = "bow"
     # animation, new_names, _ = load('/home/kia/MOTION_ESTIMATION/DATA_BANDAI_NAMCO/test/val_data/bandai-namco/dataset-2_run_masculine_006.bvh',ground_feet=False)
@@ -44,8 +45,8 @@ if __name__ == "__main__":
         #    r"/user/kyang2/u12303/skip-dataset/test/Kaya/Getting Up.bvh",
         #    ground_feet=False,
         #)
-        # animation, new_names, _ = load('/user/kyang2/u12303/skip-dataset/test/bandai-namco/dataset-1_bow_old_001.bvh',ground_feet=False)
-        animation, new_names, _ = load('/user/kyang2/u12303/skip-dataset/test/bandai-namco/dataset-1_run_active_001.bvh',ground_feet=False)
+        animation, new_names, _ = load('/user/kyang2/u12303/skip-dataset/test/bandai-namco/dataset-1_bow_old_001.bvh',ground_feet=False)
+        #animation, new_names, _ = load('/user/kyang2/u12303/skip-dataset/test/bandai-namco/dataset-1_run_active_001.bvh',ground_feet=False)
 
     #
     animation.positions[..., :, 0:1] -= animation.positions[0:1, 0:1, 0:1]
@@ -71,8 +72,11 @@ if __name__ == "__main__":
         root_trajectory = y_pred[...,0:1,6:]
         root_trajectory[:,0,0] = torch.cumsum(root_trajectory[:,0,0],dim=-1)
         root_trajectory[:,0,2] = torch.cumsum(root_trajectory[:,0,2],dim=-1)
-        print(torch.norm(root_trajectory - root_trajectory_gt[:,0:1,:],dim=-1).mean())
+        scale_factor = 1 / (1 + 2e-3)
+        print(torch.norm(root_trajectory - root_trajectory_gt[:,0:1,:],dim=-1).mean().type())
+        print(torch.norm(root_trajectory - root_trajectory_gt[:,0:1,:],dim=-1).mean()* scale_factor)
 
+        
         positions += root_trajectory.detach().numpy()
     # positions[:,0] = animation.positions[:,0]
 
@@ -92,5 +96,19 @@ if __name__ == "__main__":
     animation.positions *= 170
     animation.offsets *= 170
 
-    save("bow_no_traj_run_truth.bvh", animation)
-    # save("Capoeira_no_traj_truth.bvh",animation)
+    #save("bow_no_traj_run_truth.bvh", animation)
+    save("Capoeira_no_traj_truth.bvh",animation)
+
+    with open("bow_GT_trajectory.npy", "wb") as f:
+        np.save(f,animation.positions[:,0,:])
+    with open("bow_Pred_trajectory.npy", "wb") as f:
+        np.save(f,positions[:,0,:]*170)
+
+        
+    plt.plot(animation.positions[:,0,0],animation.positions[:,0,2], label="Ground Truth")
+    plt.plot(positions[:,0,0]*170,positions[:,0,2]*170, label="Predicted")
+    plt.legend()
+    plt.xlabel("x")
+    plt.ylabel("z")
+    plt.savefig("xz_trajectory.png")
+    

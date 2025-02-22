@@ -108,13 +108,13 @@ class Losses:
             assert d6 is not None
             # assert log_var is not None
             assert frame_time is not None
-            assert mean is not None
+            #assert mean is not None
             assert consec_frames is not None
 
             self.d6 = d6
             self.d6_pred = d6_pred
             # self.log_var = log_var
-            self.mean = mean
+            #self.mean = mean
             self.children_mask = children_mask
             self.frame_time = frame_time
             self.consec_frames = consec_frames
@@ -343,7 +343,7 @@ class Losses:
         """
 
         root_trajectory_loss = torch.norm(
-            self.root_trajectory[:, 0:1] - self.root_trajectory_pred[:, 0:1], dim=-1
+            self.root_trajectory[:, 0:1] - self.root_trajectory_pred, dim=-1
         ).mean()
 
         return root_trajectory_loss

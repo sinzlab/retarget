@@ -42,8 +42,8 @@ class TransformerEncoder(nn.Module):
         self.pos_encoder = PositionalEncoding(d_model)
         self.linear = nn.Linear(d_input, d_model)
 
-        self.mean_token = nn.Parameter(torch.randn(1, d_model))
-        # self.log_var_token = nn.Parameter(torch.randn(1, d_model))
+        self.pose_token = nn.Parameter(torch.randn(1, d_model))
+        self.root_traj_token = nn.Parameter(torch.randn(1, d_model))
 
     def forward(self, x, t_pose, edge_index, mask=None):
         src = self.linear(x)
@@ -53,21 +53,19 @@ class TransformerEncoder(nn.Module):
 
         distribution_tokens = torch.stack(
             [
-                self.mean_token.repeat(src.shape[0], 1),
-                #        self.log_var_token.repeat(src.shape[0], 1),
+                self.pose_token.repeat(src.shape[0], 1),
+                self.root_traj_token.repeat(src.shape[0], 1),
             ],
             dim=1,
         )
 
-        # distribution_tokens = self.mean_token.repeat(src.shape[0], 1)
-
         src = torch.cat([distribution_tokens, src], dim=1)
         mask = torch.cat(
-            [torch.ones(src.shape[0], 1, dtype=bool, device=src.device), mask], dim=1
+            [torch.ones(src.shape[0], 2, dtype=bool, device=src.device), mask], dim=1
         )
 
         output = self.transformer_encoder(src, src_key_padding_mask=~mask)
-        return output[:, 0]  # , output[:, 1]
+        return output[:, 0] , output[:, 1]
 
 class TransformerEncoderDecoder(nn.Module):
     def __init__(
@@ -79,66 +77,46 @@ class TransformerEncoderDecoder(nn.Module):
         )
         self.transformer_decoder = nn.TransformerEncoder(encoder_layer, num_layers)
         self.pos_encoder = PositionalEncoding(d_model)
-        self.linear = nn.Linear(d_model, d_output)
-
-    def forward(self, z, t_pose, edge_index, mask=None):
-        src = z.unsqueeze(1).repeat(1, mask.shape[1], 1)
+        self.linear_pose = nn.Linear(d_model, d_output)
+        self.linear_traj = nn.Linear(d_model, 3)
+        
+    def forward(self, pose_latent, root_traj_latent, t_pose, edge_index, mask=None):
+        src_pose = pose_latent.unsqueeze(1).repeat(1, mask.shape[1], 1)
+        src_root_traj = root_traj_latent.unsqueeze(1)
+        
         pe = self.pos_encoder(t_pose, edge_index)
         pe = graph_to_batch(pe, mask)
-        src = src * pe  # multiply by positional encoding
+        src = src_pose * pe  # multiply by positional encoding
 
+        src = torch.cat([src, src_root_traj], dim=1)
+        mask = torch.cat(
+            [mask, torch.ones(src.shape[0], 1, dtype=bool, device=src.device)], dim=1
+        )
+        
         output = self.transformer_decoder(src, src_key_padding_mask=~mask)
 
         #Project d_model dim to output dim
-        output = self.linear(output)
-        return output
-
-
-class GraphSageDecoder(nn.Module):
-    def __init__(self, d_input, d_model):
-        super(GraphSageDecoder, self).__init__()
-        self.pos_encoder = PositionalEncoding(d_model)
-        self.act = nn.GELU()
-        self.gcn = GraphSAGE(
-            d_model, 1024, out_channels=d_input, num_layers=4, act=self.act
-        )
-
-    def forward(self, x, t_pose, edge_index, mask=None):
-        src = x.unsqueeze(1).repeat(1, mask.shape[1], 1)
-        pe = self.pos_encoder(t_pose, edge_index)
-
-        pe = graph_to_batch(pe, mask)
-
-        src = src * pe  # multiply by positional encoding
-
-        batch = batch_to_graph(src, mask)
-        output = self.gcn(batch.x, edge_index)
-        output = graph_to_batch(output, mask)
-
-        return output
-
+        output_pose = self.linear_pose(output[:,:-1,:])
+        output_traj = self.linear_traj(output[:,-1:,:])
+        
+        return output_pose, output_traj
 
 class TransformerAutoEncoder(nn.Module):
     def __init__(
-            self, d_input, d_model, nhead, num_layers, dim_feedforward=512, dropout=0, transformer_decoder = False,
+            self, d_input, d_model, nhead, num_layers, dim_feedforward=512, dropout=0,
     ):
         super(TransformerAutoEncoder, self).__init__()
         self.encoder = TransformerEncoder(
             d_input=d_input + 9, d_model=d_model, nhead=nhead, num_layers=num_layers
         )
 
-        if transformer_decoder:
-            self.decoder = TransformerEncoderDecoder(d_output = d_input, d_model = d_model, nhead=nhead, num_layers = num_layers)
-        else:
-            self.decoder = GraphSageDecoder(d_input=d_input, d_model=d_model)
+        self.decoder = TransformerEncoderDecoder(d_output = d_input - 3, d_model = d_model, nhead=nhead, num_layers = num_layers)
 
     def forward(self, x, t_pose, edge_index, mask=None):
-        mean = self.encoder(x, t_pose, edge_index, mask=mask)
+        z_pose, z_root_traj = self.encoder(x, t_pose, edge_index, mask=mask)
 
-        z_out = mean
-
-        decoded = self.decoder(z_out, t_pose, edge_index, mask=mask)
-        return decoded, mean  # , log_var
+        decoded_pose, decoded_traj = self.decoder(z_pose, z_root_traj, t_pose, edge_index, mask=mask)
+        return decoded_pose, decoded_traj, z_pose, z_root_traj
 
     def reparametrize(self, mean, log_var):
         """

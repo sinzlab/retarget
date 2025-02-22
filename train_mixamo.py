@@ -70,7 +70,7 @@ if __name__ == "__main__":
         model = TransformerAutoEncoder.from_pretrained(resume, checkpoint=resume)
     else:
         model = TransformerAutoEncoder(
-            d_input=d_input, d_model=d_model, nhead=nhead, num_layers=num_layers, transformer_decoder = True,
+            d_input=d_input, d_model=d_model, nhead=nhead, num_layers=num_layers
         )
 
     # Training loop

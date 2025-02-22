@@ -107,10 +107,10 @@ def trainer(
             optimizer.zero_grad()
 
             # Create prediction for original frame
-            y_pred, mean = model(batch.x, batch.pos, batch.edge_index, mask=mask)
+            d6_pred, root_traj_pred, z_pose, z_root_traj = model(batch.x, batch.pos, batch.edge_index, mask=mask)
 
             fk_pose, edge_indexs = fk_for_batch(
-                batch, y_pred[:, :, :6], quater=False, rotations_fmt="d6", device=device
+                batch, d6_pred, quater=False, rotations_fmt="d6", device=device
             )
             fk_pose = fk_pose - fk_pose[..., 0:1, :]
 
@@ -128,11 +128,11 @@ def trainer(
                 mask=mask,
                 children_mask=children_mask,
                 d6=d6,
-                d6_pred=y_pred[:, :, :6],
+                d6_pred=d6_pred,
                 root_trajectory=root_trajectory,
-                root_trajectory_pred=y_pred[:, :, 6:],
+                root_trajectory_pred=root_traj_pred,
                 # log_var=log_var,
-                mean=mean,
+                #mean=mean,
                 frame_time=fps,
                 mode="train",
                 consec_frames=8,
@@ -194,20 +194,16 @@ def trainer(
                 position = graph_to_batch(batch.position, mask).to(device)
                 root_trajectory = graph_to_batch(batch.root_trajectory, mask).to(device)
 
-                y_pred, mean = model(
-                    batch.x.to(device),
-                    batch.pos.to(device),
-                    batch.edge_index.to(device),
-                    mask=mask.to(device),
-                )
+                d6_pred, root_traj_pred, z_pose, z_root_traj = model(batch.x, batch.pos, batch.edge_index, mask=mask)
 
                 fk_pose, edge_indexs = fk_for_batch(
                     batch,
-                    y_pred[:, :, :6],
+                    d6_pred,
                     quater=False,
                     rotations_fmt="d6",
                     device=device,
                 )
+                
                 fk_pose = fk_pose - fk_pose[..., 0:1, :]
 
                 # compute losses
@@ -215,7 +211,7 @@ def trainer(
                     fk_pose=fk_pose,
                     position=position,
                     root_trajectory=root_trajectory,
-                    root_trajectory_pred=y_pred[:, :, 6:],
+                    root_trajectory_pred=root_traj_pred,
                     mask=mask,
                     mode="validation",
                 ).losses

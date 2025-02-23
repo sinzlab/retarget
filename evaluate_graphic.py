@@ -20,7 +20,7 @@ if __name__ == "__main__":
 
     # Load pretrained model
     print("LOAD PRETRAINED MODEL")
-    model_name = "dulcet-glitter-387"
+    model_name = "worldly-terrain-399"
     checkpoint = torch.load(
         f"./models/local/{model_name}_latest_checkpoint.tar", map_location="cpu"
     )
@@ -45,12 +45,9 @@ if __name__ == "__main__":
         #    r"/user/kyang2/u12303/skip-dataset/test/Kaya/Getting Up.bvh",
         #    ground_feet=False,
         #)
-        animation, new_names, _ = load('/user/kyang2/u12303/skip-dataset/test/bandai-namco/dataset-1_bow_old_001.bvh',ground_feet=False)
-        #animation, new_names, _ = load('/user/kyang2/u12303/skip-dataset/test/bandai-namco/dataset-1_run_active_001.bvh',ground_feet=False)
+        #animation, new_names, _ = load('/user/kyang2/u12303/skip-dataset/test/bandai-namco/dataset-1_bow_old_001.bvh',ground_feet=False)
+        animation, new_names, _ = load('/user/kyang2/u12303/skip-dataset/test/bandai-namco/dataset-1_run_active_001.bvh',ground_feet=False)
 
-    #
-    animation.positions[..., :, 0:1] -= animation.positions[0:1, 0:1, 0:1]
-    animation.positions[..., :, 2:3] -= animation.positions[0:1, 0:1, 2:3]
     
     # convert the animation to a graph
     data = animation.as_graph()
@@ -60,25 +57,16 @@ if __name__ == "__main__":
 
     with torch.inference_mode():
         # encode the animation into the latent space
-        latent = model.encoder(batch.x, batch.pos, batch.edge_index, mask=mask)
+        pose_token, root_traj_token = model.encoder(batch.x, batch.pos, batch.edge_index, mask=mask)
         root_trajectory_gt = graph_to_batch(batch.root_trajectory, mask)
 
         # decode the latent space back into the animation
-        y_pred = model.decoder(latent, batch.pos, batch.edge_index, mask=mask)
+        d6_pred, root_trajectory_pred = model.decoder(pose_token,root_traj_token, batch.pos, batch.edge_index, mask=mask)
 
-        fk_pose, edge_indexs = tokenizer.decode(batch, y_pred[..., :, :6])
-        rotations = Quaternions(np.stack([d6_2_quat(d6) for d6 in y_pred[..., :, :6]]))
+        fk_pose, edge_indexs = tokenizer.decode(batch, d6_pred)
+        rotations = Quaternions(np.stack([d6_2_quat(d6) for d6 in d6_pred]))
         positions = (fk_pose - fk_pose[..., 0:1, :]).detach().numpy()
-        root_trajectory = y_pred[...,0:1,6:]
-        root_trajectory[:,0,0] = torch.cumsum(root_trajectory[:,0,0],dim=-1)
-        root_trajectory[:,0,2] = torch.cumsum(root_trajectory[:,0,2],dim=-1)
-        scale_factor = 1 / (1 + 2e-3)
-        print(torch.norm(root_trajectory - root_trajectory_gt[:,0:1,:],dim=-1).mean().type())
-        print(torch.norm(root_trajectory - root_trajectory_gt[:,0:1,:],dim=-1).mean()* scale_factor)
-
-        
-        positions += root_trajectory.detach().numpy()
-    # positions[:,0] = animation.positions[:,0]
+        positions += root_trajectory_pred.detach().numpy()
 
     recon_anim = Animation(
         rotations,
@@ -88,27 +76,14 @@ if __name__ == "__main__":
         animation.parents,
     )
 
+    animation.positions *= 170
+    animation.offsets *= 170
+    
     if string == "Capoeira":
         save(f"Capoeira_{model_name}.bvh", recon_anim)
     else:
-        save(f"bow_{model_name}.bvh", recon_anim)
-
-    animation.positions *= 170
-    animation.offsets *= 170
-
-    #save("bow_no_traj_run_truth.bvh", animation)
-    save("Capoeira_no_traj_truth.bvh",animation)
-
-    with open("bow_GT_trajectory.npy", "wb") as f:
-        np.save(f,animation.positions[:,0,:])
-    with open("bow_Pred_trajectory.npy", "wb") as f:
-        np.save(f,positions[:,0,:]*170)
-
+        save(f"run_{model_name}.bvh", recon_anim)
         
-    plt.plot(animation.positions[:,0,0],animation.positions[:,0,2], label="Ground Truth")
-    plt.plot(positions[:,0,0]*170,positions[:,0,2]*170, label="Predicted")
-    plt.legend()
-    plt.xlabel("x")
-    plt.ylabel("z")
-    plt.savefig("xz_trajectory.png")
+        save(f"run_GT.bvh", animation)
+    
     

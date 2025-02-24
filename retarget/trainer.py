@@ -32,14 +32,22 @@ import torch_geometric
 #     from transformers import get_cosine_schedule_with_warmup, get_cosine_with_hard_restarts_schedule_with_warmup
 
 
-def loaded_graphs_to_batch(batch):
+def loaded_graphs_to_batch(batch, mode = "train"):
     graph_list = []
-    for graphs in batch:
-        graph_list += graphs
 
-    return graph_list
+    if mode == "train":
+        graph_list_augment = []
+    
+        for graphs, graphs_augmented in batch:
+            graph_list += graphs
+            graph_list_augment += graphs_augmented
 
+        return graph_list, graph_list_augment
+    else:
+        for graphs in batch:
+            graph_list += graphs
 
+        return graph_list
 def trainer(
     model,
     dataloader,
@@ -91,9 +99,14 @@ def trainer(
         for batch in pbar:
             batch_idx += 1
 
-            batch = loaded_graphs_to_batch(batch)
+            batch, batch_augmented = loaded_graphs_to_batch(batch, mode = "train")
+
             batch = torch_geometric.data.Batch.from_data_list(batch)
+            batch_augmented = torch_geometric.data.Batch.from_data_list(batch_augmented)
+            
             batch = batch.to(device)
+            batch_augmented = batch_augmented.to(device)
+
             # frame_time = frame_time[:, None, None].to(device)
             fps = 1 / 30
 
@@ -108,6 +121,7 @@ def trainer(
 
             # Create prediction for original frame
             d6_pred, root_traj_pred, z_pose, z_root_traj = model(batch.x, batch.pos, batch.edge_index, mask=mask)
+            d6_pred_augmented, root_traj_pred_augmented, z_pose_augmented, z_root_traj_augmented = model(batch_augmented.x, batch_augmented.pos, batch_augmented.edge_index, mask=mask)
 
             fk_pose, edge_indexs = fk_for_batch(
                 batch, d6_pred, quater=False, rotations_fmt="d6", device=device
@@ -132,7 +146,8 @@ def trainer(
                 root_trajectory=root_trajectory,
                 root_trajectory_pred=root_traj_pred,
                 # log_var=log_var,
-                #mean=mean,
+                z_pose=z_pose,
+                z_pose_augmented=z_pose_augmented,
                 frame_time=fps,
                 mode="train",
                 consec_frames=8,
@@ -146,6 +161,7 @@ def trainer(
                 + 1 * train_losses["vel_loss"]
                 + 1 * acc_loss_scale * train_losses["acc_loss"]
                 + 10 * train_losses["root_trajectory_loss"]
+                + train_losses["z_pose_loss"]
             )
 
             loss = loss.mean()
@@ -175,6 +191,7 @@ def trainer(
                     "velocity loss": 170 * train_losses["vel_loss"].item() / fps,
                     "jerk loss": 170 * train_losses["acc_loss"].item() * fps,
                     "root traj loss": 170 * train_losses["root_trajectory_loss"].item(),
+                    "z pose loss": train_losses["z_pose_loss"].item(),
                 }
             )
 
@@ -186,7 +203,7 @@ def trainer(
             val_root_trajectory_losses = []
             for batch in test_dataloader:
 
-                batch = loaded_graphs_to_batch(batch)
+                batch = loaded_graphs_to_batch(batch, mode="test")
                 batch = torch_geometric.data.Batch.from_data_list(batch)
                 batch = batch.to(device)
 

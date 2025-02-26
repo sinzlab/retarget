@@ -47,7 +47,7 @@ class TransformerEncoder(nn.Module):
 
     def forward(self, x, t_pose, edge_index, mask=None):
         src = self.linear(x)
-        src = src + self.pos_encoder(t_pose, edge_index)
+        src = src * self.pos_encoder(t_pose, edge_index)
 
         src = graph_to_batch(src, mask)
 
@@ -77,6 +77,8 @@ class TransformerEncoderDecoder(nn.Module):
         )
         self.transformer_decoder = nn.TransformerEncoder(encoder_layer, num_layers)
         self.pos_encoder = PositionalEncoding(d_model)
+        self.src_root_traj_pos_enc = nn.Parameter(torch.randn(1, d_model))
+        
         self.linear_pose = nn.Linear(d_model, d_output)
         self.linear_traj = nn.Linear(d_model, 3)
         
@@ -87,7 +89,7 @@ class TransformerEncoderDecoder(nn.Module):
         pe = self.pos_encoder(t_pose, edge_index)
         pe = graph_to_batch(pe, mask)
         src = src_pose * pe  # multiply by positional encoding
-
+        src_root_traj_latent = src_root_traj_latent + src_root_traj_pos_enc 
         src = torch.cat([src, src_root_traj], dim=1)
         mask = torch.cat(
             [mask, torch.ones(src.shape[0], 1, dtype=bool, device=src.device)], dim=1

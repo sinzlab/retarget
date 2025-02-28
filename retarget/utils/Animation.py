@@ -219,9 +219,6 @@ class Animation:
             d6 = quat_2_d6(rotation)
 
             position = torch.Tensor(position)
-            root_trajectory = torch.zeros_like(position)
-            root_trajectory[0] += position[0]
-            position = position - position[0]
 
             if i * stride == 0:
                 position_prev = torch.Tensor(position)
@@ -231,6 +228,10 @@ class Animation:
                 position_prev = torch.Tensor(self.positions[idx_prev])
                 rotation_prev = torch.Tensor(np.array(self.rotations[idx_prev]))
 
+            root_trajectory = torch.zeros_like(position)
+            root_trajectory[0, :] += position[0, :]
+
+            position = position - position[0]
             position_prev = position_prev - position_prev[0]
 
             velocity = position - position_prev

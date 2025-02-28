@@ -637,14 +637,21 @@ def d6_2_rotmat(d6):
 
     # Extract 6D representation elements
     d6 = d6.reshape(*d6.shape[:-1], 2, 3)
-    b1 = d6[..., 0, :] / torch.norm(d6[..., 0, :], dim=-1, keepdim=True)
+
+    d6_norm = torch.norm(d6[..., 0, :], dim=-1, keepdim=True)
+    d6_clamped = torch.clamp(d6_norm, min=1e-7)
+    
+    b1 = d6[..., 0, :] / d6_clamped
     a2 = d6[..., 1, :]
 
     # dot product of b1 with a2
     u2 = a2 - (b1 * a2).sum(dim=-1, keepdim=True) * b1
 
     # u2 = a2 - (b1 @ a2) @ b1
-    b2 = u2 / torch.norm(u2, dim=-1, keepdim=True)
+    u2_norm = torch.norm(u2, dim=-1, keepdim=True)
+    u2_clamped = torch.clamp(u2_norm, min=1e-7)
+    
+    b2 = u2 / u2_clamped
     b3 = torch.cross(b1, b2, dim=-1)
     rotmat = torch.cat((b1[..., None], b2[..., None], b3[..., None]), dim=-1)
     # rotmat = torch.cat((d6, torch.cross(d6[..., 0:1, :], d6[..., 1:2, :], dim=-1)), dim=-2)

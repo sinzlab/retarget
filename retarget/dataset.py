@@ -109,7 +109,7 @@ class MixamoDataset(Dataset):
     def __len__(self):
         return len(self.data) // self.cons_q
 
-    def get_one_item(self, idx, global_skel_scale=None):
+    def get_one_item(self, idx, global_skel_scale=None, x_translation=None, z_translation=None):
         item = self.data[self.data_idx[idx]].clone()
 
         if self.mode == "train":
@@ -147,34 +147,40 @@ class MixamoDataset(Dataset):
             item.x[:, 12:15] = torch.Tensor(position - position_prev).clone()
             item.x[:, 15:] *= global_skel_scale
 
-            return item, frame_time
+            #Augment root trajectory
+            item_aug = item.clone()
+            item_aug.root_trajectory[:,0] += x_translation
+            item_aug.root_trajectory[:,2] += z_translation
+            item_aug.x[:,15] += x_translation
+            item_aug.x[:,17] += z_translation
+
+            return item, item_aug, frame_time
         return item
 
     def __getitem__(self, idx):
 
         item = []
+        item_aug = []
 
         if self.mode == "train":
             frame_time = []
-
-            # item_example = self.data[self.data_idx[idx*self.cons_q]].clone()
-            # scaled_offset = item_example.offsets.numpy().copy()
-            # if np.random.rand() < 0.5:
-            #    scaled_offset = scaled_offset * np.random.uniform(
-            #        0.5, 1.5, size=scaled_offset.shape
-            #    )
 
             if np.random.rand() < 0.25:
                 global_skel_scale = np.random.uniform(0.5, 1.5)
             else:
                 global_skel_scale = 1.0
 
+            x_translation = torch.rand(1) * 10
+            z_translation = torch.rand(1) * 10
+
             for i in range(self.cons_q):
-                it, f_time = self.get_one_item(idx * self.cons_q + i, global_skel_scale)
+            
+                it,it_augmented, f_time = self.get_one_item(idx * self.cons_q + i, global_skel_scale, x_translation, z_translation)
                 item.append(it)
+                item_aug.append(it_augmented)
                 frame_time.append(f_time)
 
-            return item  # , frame_time
+            return item, item_aug  # , frame_time
 
         for i in range(self.cons_q):
             it = self.get_one_item(idx * self.cons_q + i)

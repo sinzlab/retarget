@@ -32,14 +32,22 @@ import torch_geometric
 #     from transformers import get_cosine_schedule_with_warmup, get_cosine_with_hard_restarts_schedule_with_warmup
 
 
-def loaded_graphs_to_batch(batch):
+def loaded_graphs_to_batch(batch, mode = "train"):
     graph_list = []
-    for graphs in batch:
-        graph_list += graphs
 
-    return graph_list
+    if mode == "train":
+        graph_list_augment = []
+    
+        for graphs, graphs_augmented in batch:
+            graph_list += graphs
+            graph_list_augment += graphs_augmented
 
+        return graph_list, graph_list_augment
+    else:
+        for graphs in batch:
+            graph_list += graphs
 
+        return graph_list
 def trainer(
     model,
     dataloader,
@@ -91,9 +99,14 @@ def trainer(
         for batch in pbar:
             batch_idx += 1
 
-            batch = loaded_graphs_to_batch(batch)
+            batch, batch_augmented = loaded_graphs_to_batch(batch, mode = "train")
+
             batch = torch_geometric.data.Batch.from_data_list(batch)
+            batch_augmented = torch_geometric.data.Batch.from_data_list(batch_augmented)
+            
             batch = batch.to(device)
+            batch_augmented = batch_augmented.to(device)
+
             # frame_time = frame_time[:, None, None].to(device)
             fps = 1 / 30
 
@@ -107,10 +120,11 @@ def trainer(
             optimizer.zero_grad()
 
             # Create prediction for original frame
-            y_pred, mean = model(batch.x, batch.pos, batch.edge_index, mask=mask)
+            d6_pred, root_traj_pred, z_pose, z_root_traj = model(batch.x, batch.pos, batch.edge_index, mask=mask)
+            d6_pred_augmented, root_traj_pred_augmented, z_pose_augmented, z_root_traj_augmented = model(batch_augmented.x, batch_augmented.pos, batch_augmented.edge_index, mask=mask)
 
             fk_pose, edge_indexs = fk_for_batch(
-                batch, y_pred[:, :, :6], quater=False, rotations_fmt="d6", device=device
+                batch, d6_pred, quater=False, rotations_fmt="d6", device=device
             )
             fk_pose = fk_pose - fk_pose[..., 0:1, :]
 
@@ -128,11 +142,12 @@ def trainer(
                 mask=mask,
                 children_mask=children_mask,
                 d6=d6,
-                d6_pred=y_pred[:, :, :6],
+                d6_pred=d6_pred,
                 root_trajectory=root_trajectory,
-                root_trajectory_pred=y_pred[:, :, 6:],
+                root_trajectory_pred=root_traj_pred,
                 # log_var=log_var,
-                mean=mean,
+                z_pose=z_pose,
+                z_pose_augmented=z_pose_augmented,
                 frame_time=fps,
                 mode="train",
                 consec_frames=8,
@@ -141,16 +156,17 @@ def trainer(
             loss = (
                 100 * train_losses["recn_loss"]
                 + 100 * train_losses["recn_loss_root_children"]
-                + 5 * train_losses["d6_loss"]
-                + 100 * train_losses["vel_loss"]
-                + 100 * acc_loss_scale * train_losses["acc_loss"]
-                + 100 * train_losses["root_trajectory_loss"]
+                #+ 5 * train_losses["d6_loss"]
+                + 5 * train_losses["geodesic_loss"]
+                + 1 * train_losses["vel_loss"]
+                + 1 * acc_loss_scale * train_losses["acc_loss"]
+                + 10 * train_losses["root_trajectory_loss"]
+                + train_losses["z_pose_loss"]
             )
 
             loss = loss.mean()
 
             loss.backward()
-
             # clip gradients
             torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
 
@@ -171,9 +187,11 @@ def trainer(
                 {
                     "loss": 170 * train_losses["recn_loss"].item(),
                     "angle loss": train_losses["d6_loss"].item(),
+                    "geodesic loss": train_losses["geodesic_loss"].item(),
                     "velocity loss": 170 * train_losses["vel_loss"].item() / fps,
                     "jerk loss": 170 * train_losses["acc_loss"].item() * fps,
                     "root traj loss": 170 * train_losses["root_trajectory_loss"].item(),
+                    "z pose loss": train_losses["z_pose_loss"].item(),
                 }
             )
 
@@ -185,7 +203,7 @@ def trainer(
             val_root_trajectory_losses = []
             for batch in test_dataloader:
 
-                batch = loaded_graphs_to_batch(batch)
+                batch = loaded_graphs_to_batch(batch, mode="test")
                 batch = torch_geometric.data.Batch.from_data_list(batch)
                 batch = batch.to(device)
 
@@ -193,20 +211,16 @@ def trainer(
                 position = graph_to_batch(batch.position, mask).to(device)
                 root_trajectory = graph_to_batch(batch.root_trajectory, mask).to(device)
 
-                y_pred, mean = model(
-                    batch.x.to(device),
-                    batch.pos.to(device),
-                    batch.edge_index.to(device),
-                    mask=mask.to(device),
-                )
+                d6_pred, root_traj_pred, z_pose, z_root_traj = model(batch.x, batch.pos, batch.edge_index, mask=mask)
 
                 fk_pose, edge_indexs = fk_for_batch(
                     batch,
-                    y_pred[:, :, :6],
+                    d6_pred,
                     quater=False,
                     rotations_fmt="d6",
                     device=device,
                 )
+                
                 fk_pose = fk_pose - fk_pose[..., 0:1, :]
 
                 # compute losses
@@ -214,7 +228,7 @@ def trainer(
                     fk_pose=fk_pose,
                     position=position,
                     root_trajectory=root_trajectory,
-                    root_trajectory_pred=y_pred[:, :, 6:],
+                    root_trajectory_pred=root_traj_pred,
                     mask=mask,
                     mode="validation",
                 ).losses

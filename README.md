@@ -58,3 +58,47 @@ model = TransformerAutoEncoder(d_input=9, d_model=64, nhead=2, num_layers=4)
 # from pretrained
 model = TransformerAutoEncoder.from_pretrained('local/model')
 ```
+
+### Reconstructing an animation
+```python
+from retarget import retarget_animation, load, save
+
+model_name = 'checkpoint-name'
+
+source_animation, names, _ = load('path/to/source/animation.bvh')
+
+reconstructed_animation = retarget_animation(model_name, source_animation)
+
+save('path/to/reconstructed/animation.bvh', reconstructed_animation, names=names)
+```
+
+### Retargeting an animation
+```python
+from retarget import retarget_animation, load, save
+
+model_name = 'checkpoint-name'
+
+source_animation, names, _ = load('path/to/source/animation.bvh')
+target_animation, _, _ = load('path/to/target/animation.bvh') # animation with target skeleton
+
+retargeted_animation = retarget_animation(model_name, source_animation, target_animation)
+
+save('path/to/retargeted/animation.bvh', retargeted_animation, names=names)
+```
+
+### Running from command line
+For reconstructing an animation, run
+```bash
+python scripts/retarget.py --src_path path/to/source/animation.bvh --model_name checkpoint-name --output_dir ./results
+```
+
+For retargeting an animation, run
+```bash
+python scripts/retarget.py --src_path path/to/source/animation.bvh --tgt_path path/to/target/animation.bvh --model_name checkpoint-name --output_dir ./results
+```
+
+Alternatively you can use short flags for the arguments
+```bash
+python scripts/visualize.py -s path/to/source/animation.bvh -t path/to/target/animation.bvh -m checkpoint-name -o ./results
+```
+

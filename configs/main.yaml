@@ -26,7 +26,7 @@ config:
     z_pose_loss: 1
   
   dateset:
-    name: "mixamo"
+    name: "skip"
     path: "/user/kyang2/u12303/skip-dataset"
     train_dir: "train_same_cmu_cleaned"
     test_dir: "test"

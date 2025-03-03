@@ -1,11 +1,10 @@
 import operator
 
 import numpy as np
-import copy
 
 import retarget.utils.AnimationStructure as AnimationStructure
 from retarget.model import graph_to_batch, mask_from_batch
-from retarget.utils.Quaternions_old import Quaternions, d6_2_rotmat
+from retarget.utils.Quaternions import Quaternions, d6_2_rotmat
 
 
 class Animation:
@@ -209,7 +208,8 @@ class Animation:
 
         """
         from torch_geometric.data import Data
-        from retarget.utils.Quaternions_old import quat_2_d6
+
+        from retarget.utils.Quaternions import quat_2_d6
 
         data = []
 

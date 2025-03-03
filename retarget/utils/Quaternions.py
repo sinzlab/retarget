@@ -280,7 +280,7 @@ class Quaternions:
         q3 = q[..., 3]
         es = np.zeros(self.shape + (3,))
 
-        #if order == "xyz":
+        # if order == "xyz":
         #    es[..., 0] = np.arctan2(
         #        2 * (q0 * q1 + q2 * q3), 1 - 2 * (q1 * q1 + q2 * q2)
         #    )
@@ -288,7 +288,7 @@ class Quaternions:
         #    es[..., 2] = np.arctan2(
         #        2 * (q0 * q3 + q1 * q2), 1 - 2 * (q2 * q2 + q3 * q3)
         #    )
-        #elif order == "yzx":
+        # elif order == "yzx":
         #    es[..., 0] = np.arctan2(
         #        2 * (q1 * q0 - q2 * q3), -q1 * q1 + q2 * q2 - q3 * q3 + q0 * q0
         #    )
@@ -297,10 +297,14 @@ class Quaternions:
         #    )
         #    es[..., 2] = np.arcsin((2 * (q1 * q2 + q3 * q0)).clip(-1, 1))
 
-        if  order == 'xyz':
-            es[..., 2] = np.arctan2(2 * (q0 * q3 - q1 * q2), q0 * q0 + q1 * q1 - q2 * q2 - q3 * q3)
-            es[..., 1] = np.arcsin((2 * (q1 * q3 + q0 * q2)).clip(-1,1))
-            es[..., 0] = np.arctan2(2 * (q0 * q1 - q2 * q3), q0 * q0 - q1 * q1 - q2 * q2 + q3 * q3)
+        if order == "xyz":
+            es[..., 2] = np.arctan2(
+                2 * (q0 * q3 - q1 * q2), q0 * q0 + q1 * q1 - q2 * q2 - q3 * q3
+            )
+            es[..., 1] = np.arcsin((2 * (q1 * q3 + q0 * q2)).clip(-1, 1))
+            es[..., 0] = np.arctan2(
+                2 * (q0 * q1 - q2 * q3), q0 * q0 - q1 * q1 - q2 * q2 + q3 * q3
+            )
         else:
             raise NotImplementedError("Cannot convert from ordering %s" % order)
 
@@ -645,7 +649,7 @@ def d6_2_rotmat(d6):
 
     d6_norm = torch.norm(d6[..., 0, :], dim=-1, keepdim=True)
     d6_clamped = torch.clamp(d6_norm, min=1e-7)
-    
+
     b1 = d6[..., 0, :] / d6_clamped
     a2 = d6[..., 1, :]
 
@@ -655,7 +659,7 @@ def d6_2_rotmat(d6):
     # u2 = a2 - (b1 @ a2) @ b1
     u2_norm = torch.norm(u2, dim=-1, keepdim=True)
     u2_clamped = torch.clamp(u2_norm, min=1e-7)
-    
+
     b2 = u2 / u2_clamped
     b3 = torch.cross(b1, b2, dim=-1)
     rotmat = torch.cat((b1[..., None], b2[..., None], b3[..., None]), dim=-1)

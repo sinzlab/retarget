@@ -1,11 +1,12 @@
 import os
+from typing import Any, Dict, Optional, Tuple, Union
 
 import torch
 import torch.nn as nn
 
 try:
-    from torch_geometric.nn import GraphSAGE
     from torch_geometric.data import Batch, Data
+    from torch_geometric.nn import GraphSAGE
 except ImportError:
     import warnings
 
@@ -16,24 +17,78 @@ except ImportError:
     subprocess.check_call(
         [sys.executable, "-m", "pip", "install", "torch-geometric==2.5.1"]
     )
-    from torch_geometric.nn import GraphSAGE
     from torch_geometric.data import Batch, Data
+    from torch_geometric.nn import GraphSAGE
 
 
 class PositionalEncoding(nn.Module):
-    def __init__(self, d_model):
+    """
+    Graph-based positional encoding using GraphSAGE.
+
+    Attributes:
+        gcn: GraphSAGE network for encoding positional information
+    """
+
+    def __init__(self, d_model: int):
+        """
+        Initialize the positional encoding module.
+
+        Parameters
+        ----------
+        d_model: Dimension of the model
+        """
         super(PositionalEncoding, self).__init__()
         self.gcn = GraphSAGE(3, d_model, num_layers=2)
 
-    def forward(self, x, edge_index):
+    def forward(self, x: torch.Tensor, edge_index: torch.Tensor) -> torch.Tensor:
+        """
+        Compute positional encoding for input features.
+
+        Parameters
+        ----------
+        x: Node features of shape [num_nodes, 3]
+        edge_index: Graph connectivity of shape [2, num_edges]
+
+        Returns:
+            Positional encoding of shape [num_nodes, d_model]
+        """
         pe = self.gcn(x, edge_index)
         return pe
 
 
 class TransformerEncoder(nn.Module):
+    """
+    Transformer encoder for processing graph-structured motion data.
+
+    Attributes:
+        transformer_encoder: Standard transformer encoder
+        pos_encoder: Positional encoding module
+        linear: Linear projection layer
+        pose_token: Learnable token for pose representation
+        root_traj_token: Learnable token for root trajectory representation
+    """
+
     def __init__(
-        self, d_input, d_model, nhead, num_layers, dim_feedforward=512, dropout=0
+        self,
+        d_input: int,
+        d_model: int,
+        nhead: int,
+        num_layers: int,
+        dim_feedforward: int = 512,
+        dropout: float = 0,
     ):
+        """
+        Initialize the transformer encoder.
+
+        Parameters
+        ----------
+        d_input: Dimension of input features
+        d_model: Dimension of the model
+        nhead: Number of attention heads
+        num_layers: Number of transformer layers
+        dim_feedforward: Dimension of feedforward network
+        dropout: Dropout probability
+        """
         super(TransformerEncoder, self).__init__()
         encoder_layer = nn.TransformerEncoderLayer(
             d_model, nhead, dim_feedforward, dropout, batch_first=True
@@ -45,7 +100,28 @@ class TransformerEncoder(nn.Module):
         self.pose_token = nn.Parameter(torch.randn(1, d_model))
         self.root_traj_token = nn.Parameter(torch.randn(1, d_model))
 
-    def forward(self, x, t_pose, edge_index, mask=None):
+    def forward(
+        self,
+        x: torch.Tensor,
+        t_pose: torch.Tensor,
+        edge_index: torch.Tensor,
+        mask: Optional[torch.Tensor] = None,
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        """
+        Forward pass of the transformer encoder.
+
+        Parameters
+        ----------
+        x: Input features of shape [num_nodes, d_input]
+        t_pose: T-pose positions of shape [num_nodes, 3]
+        edge_index: Graph connectivity of shape [2, num_edges]
+        mask: Boolean mask for valid nodes, shape [batch_size, max_nodes]
+
+        Returns:
+            Tuple containing:
+                - pose token output [batch_size, d_model]
+                - root trajectory token output [batch_size, d_model]
+        """
         src = self.linear(x)
         src = src * self.pos_encoder(t_pose, edge_index)
 
@@ -65,12 +141,42 @@ class TransformerEncoder(nn.Module):
         )
 
         output = self.transformer_encoder(src, src_key_padding_mask=~mask)
-        return output[:, 0] , output[:, 1]
+        return output[:, 0], output[:, 1]
+
 
 class TransformerEncoderDecoder(nn.Module):
+    """
+    Transformer decoder for reconstructing motion from latent representations.
+
+    Attributes:
+        transformer_decoder: Transformer encoder used as decoder
+        pos_encoder: Positional encoding module
+        src_root_traj_pos_enc: Learnable positional encoding for root trajectory
+        linear_pose: Linear projection for pose output
+        linear_traj: Linear projection for trajectory output
+    """
+
     def __init__(
-        self, d_output, d_model, nhead, num_layers, dim_feedforward=512, dropout=0
+        self,
+        d_output: int,
+        d_model: int,
+        nhead: int,
+        num_layers: int,
+        dim_feedforward: int = 512,
+        dropout: float = 0,
     ):
+        """
+        Initialize the transformer encoder-decoder.
+
+        Parameters
+        ----------
+        d_output: Dimension of output features
+        d_model: Dimension of the model
+        nhead: Number of attention heads
+        num_layers: Number of transformer layers
+        dim_feedforward: Dimension of feedforward network
+        dropout: Dropout probability
+        """
         super(TransformerEncoderDecoder, self).__init__()
         encoder_layer = nn.TransformerEncoderLayer(
             d_model, nhead, dim_feedforward, dropout, batch_first=True
@@ -78,78 +184,178 @@ class TransformerEncoderDecoder(nn.Module):
         self.transformer_decoder = nn.TransformerEncoder(encoder_layer, num_layers)
         self.pos_encoder = PositionalEncoding(d_model)
         self.src_root_traj_pos_enc = nn.Parameter(torch.randn(1, d_model))
-        
+
         self.linear_pose = nn.Linear(d_model, d_output)
         self.linear_traj = nn.Linear(d_model, 3)
-        
-    def forward(self, pose_latent, root_traj_latent, t_pose, edge_index, mask=None):
 
+    def forward(
+        self,
+        pose_latent: torch.Tensor,
+        root_traj_latent: torch.Tensor,
+        t_pose: torch.Tensor,
+        edge_index: torch.Tensor,
+        mask: Optional[torch.Tensor] = None,
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        """
+        Forward pass of the transformer decoder.
+
+        Parameters
+        ----------
+        pose_latent: Latent pose representation [batch_size, d_model]
+        root_traj_latent: Latent root trajectory representation [batch_size, d_model]
+        t_pose: T-pose positions [num_nodes, 3]
+        edge_index: Graph connectivity [2, num_edges]
+        mask: Boolean mask for valid nodes [batch_size, max_nodes]
+
+        Returns:
+            Tuple containing:
+                - decoded pose features [batch_size, max_nodes, d_output]
+                - decoded root trajectory [batch_size, 1, 3]
+        """
         src_pose = pose_latent.unsqueeze(1).repeat(1, mask.shape[1], 1)
         src_root_traj = root_traj_latent.unsqueeze(1)
-        
+
         pe = self.pos_encoder(t_pose, edge_index)
         pe = graph_to_batch(pe, mask)
         src = src_pose * pe  # multiply by positional encoding
-        src_root_traj_latent = src_root_traj * self.src_root_traj_pos_enc 
+        src_root_traj_latent = src_root_traj * self.src_root_traj_pos_enc
         src = torch.cat([src, src_root_traj], dim=1)
         mask = torch.cat(
             [mask, torch.ones(src.shape[0], 1, dtype=bool, device=src.device)], dim=1
         )
-        
+
         output = self.transformer_decoder(src, src_key_padding_mask=~mask)
 
-        #Project d_model dim to output dim
-        output_pose = self.linear_pose(output[:,:-1,:])
-        output_traj = self.linear_traj(output[:,-1:,:])
-        
+        # Project d_model dim to output dim
+        output_pose = self.linear_pose(output[:, :-1, :])
+        output_traj = self.linear_traj(output[:, -1:, :])
+
         return output_pose, output_traj
 
+
 class TransformerAutoEncoder(nn.Module):
+    """
+    Transformer-based autoencoder for motion data.
+
+    Attributes:
+        encoder: Transformer encoder module
+        decoder: Transformer decoder module
+    """
+
     def __init__(
-            self, d_input, d_model, nhead, num_layers, dim_feedforward=512, dropout=0,
+        self,
+        d_input: int,
+        d_model: int,
+        nhead: int,
+        num_layers: int,
+        dim_feedforward: int = 512,
+        dropout: float = 0,
     ):
+        """
+        Initialize the transformer autoencoder.
+
+        Parameters
+        ----------
+        d_input: Dimension of input features
+        d_model: Dimension of the model
+        nhead: Number of attention heads
+        num_layers: Number of transformer layers
+        dim_feedforward: Dimension of feedforward network
+        dropout: Dropout probability
+        """
         super(TransformerAutoEncoder, self).__init__()
         self.encoder = TransformerEncoder(
             d_input=d_input + 9, d_model=d_model, nhead=nhead, num_layers=num_layers
         )
 
-        self.decoder = TransformerEncoderDecoder(d_output = d_input - 3, d_model = d_model, nhead=nhead, num_layers = num_layers)
+        self.decoder = TransformerEncoderDecoder(
+            d_output=d_input - 3, d_model=d_model, nhead=nhead, num_layers=num_layers
+        )
 
-    def forward(self, x, t_pose, edge_index, t_pose_decoder = None, mask=None):
+    def forward(
+        self,
+        x: torch.Tensor,
+        t_pose: torch.Tensor,
+        edge_index: torch.Tensor,
+        t_pose_decoder: Optional[torch.Tensor] = None,
+        mask: Optional[torch.Tensor] = None,
+    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+        """
+        Forward pass of the autoencoder.
+
+        Parameters
+        ----------
+        x: Input features [num_nodes, d_input]
+        t_pose: T-pose positions for encoder [num_nodes, 3]
+        edge_index: Graph connectivity [2, num_edges]
+        t_pose_decoder: Optional different T-pose for decoder
+        mask: Boolean mask for valid nodes [batch_size, max_nodes]
+
+        Returns:
+            Tuple containing:
+                - decoded pose features [batch_size, max_nodes, d_output]
+                - decoded root trajectory [batch_size, 1, 3]
+                - pose latent vector [batch_size, d_model]
+                - root trajectory latent vector [batch_size, d_model]
+        """
         z_pose, z_root_traj = self.encoder(x, t_pose, edge_index, mask=mask)
 
         if t_pose_decoder is None:
-            decoded_pose, decoded_traj = self.decoder(z_pose, z_root_traj, t_pose, edge_index, mask=mask)
+            decoded_pose, decoded_traj = self.decoder(
+                z_pose, z_root_traj, t_pose, edge_index, mask=mask
+            )
         else:
-            decoded_pose, decoded_traj = self.decoder(z_pose, z_root_traj, t_pose_decoder, edge_index, mask=mask)
-            
+            decoded_pose, decoded_traj = self.decoder(
+                z_pose, z_root_traj, t_pose_decoder, edge_index, mask=mask
+            )
+
         return decoded_pose, decoded_traj, z_pose, z_root_traj
 
-    def reparametrize(self, mean, log_var):
+    def reparametrize(self, mean: torch.Tensor, log_var: torch.Tensor) -> torch.Tensor:
         """
-        reparametrizaiton trick
+        Reparameterization trick for variational autoencoders.
+
+        Parameters
+        ----------
+        mean: Mean of the distribution
+        log_var: Log variance of the distribution
+
+        Returns:
+            Sampled tensor from the distribution
         """
         std = torch.exp(0.5 * log_var)
         eps = torch.randn_like(std)
         return mean + eps * std
 
     @classmethod
-    def from_pretrained(cls, artifact, checkpoint=None, model_config=None):
-        default_config = {
-            "d_model": 64,
-            "d_input": 9,
-            "nhead": 8,
-            "num_layers": 4
-        }
+    def from_pretrained(
+        cls,
+        artifact: str,
+        checkpoint: Optional[Dict[str, Any]] = None,
+        model_config: Optional[Dict[str, Any]] = None,
+    ) -> "TransformerAutoEncoder":
+        """
+        Load a pretrained model from a checkpoint or artifact.
+
+        Parameters
+        ----------
+        artifact: Name of the artifact or path to load
+        checkpoint: Optional checkpoint dictionary containing model weights
+        model_config: Optional model configuration
+
+        Returns:
+            Initialized model with pretrained weights
+        """
+        default_config = {"d_model": 64, "d_input": 9, "nhead": 8, "num_layers": 4}
 
         # merge default config with model_config
-        model_config = {**default_config, **model_config}
-        
+        model_config = {**default_config, **(model_config or {})}
+
         d_model = model_config["d_model"]
         d_input = model_config["d_input"]
         nhead = model_config["nhead"]
         num_layers = model_config["num_layers"]
-            
+
         model = cls(
             d_input=d_input, d_model=d_model, nhead=nhead, num_layers=num_layers
         )
@@ -165,14 +371,20 @@ class TransformerAutoEncoder(nn.Module):
         return model
 
     @staticmethod
-    def _get_state_dict(path_or_artefact: str, use_cache: bool = False):
+    def _get_state_dict(
+        path_or_artefact: str, use_cache: bool = False
+    ) -> Dict[str, torch.Tensor]:
         """
-        Checks if path_or_artefact is a path if not tries to download the model from wandb
-        :param path_or_artefact: path to model or wandb artifact
-        :param use_cache: if true uses the cached model
-        :return: state dict of model
-        """
+        Get state dict from a path or wandb artifact.
 
+        Parameters
+        ----------
+        path_or_artefact: Path to model or wandb artifact
+        use_cache: If true, uses the cached model
+
+        Returns:
+            State dict of the model
+        """
         cache_path = "./models/" + path_or_artefact
         # check if ends with .pt
         if not path_or_artefact.endswith(".pt"):
@@ -184,16 +396,44 @@ class TransformerAutoEncoder(nn.Module):
             return torch.load(cache_path, map_location="cpu")
         else:
             return download_wandb_artefact(path_or_artefact)
-        
+
 
 class Discriminator(nn.Module):
     """
-    The discriminator is used to discriminate between real and fake data.
-    Used for training the autoencoder with Vanilla GAN adversarial loss.
+    Discriminator model for GAN training.
+
+    Used to discriminate between real and fake data in a Vanilla GAN setup.
+
+    Attributes:
+        transformer_encoder: Transformer encoder for processing input
+        pos_encoder: Positional encoding module
+        linear: Linear projection layer
+        cls_token: Classification token
+        linear_cls: Linear layer for classification
+        sigmoid: Sigmoid activation for binary classification
     """
+
     def __init__(
-        self, d_input, d_model, nhead, num_layers, dim_feedforward=512, dropout=0
+        self,
+        d_input: int,
+        d_model: int,
+        nhead: int,
+        num_layers: int,
+        dim_feedforward: int = 512,
+        dropout: float = 0,
     ):
+        """
+        Initialize the discriminator.
+
+        Parameters
+        ----------
+        d_input: Dimension of input features
+        d_model: Dimension of the model
+        nhead: Number of attention heads
+        num_layers: Number of transformer layers
+        dim_feedforward: Dimension of feedforward network
+        dropout: Dropout probability
+        """
         super(Discriminator, self).__init__()
         encoder_layer = nn.TransformerEncoderLayer(
             d_model, nhead, dim_feedforward, dropout, batch_first=True
@@ -206,7 +446,26 @@ class Discriminator(nn.Module):
         self.linear_cls = nn.Linear(d_model, 1)
         self.sigmoid = nn.Sigmoid()
 
-    def forward(self, x, t_pose, edge_index, mask=None):
+    def forward(
+        self,
+        x: torch.Tensor,
+        t_pose: torch.Tensor,
+        edge_index: torch.Tensor,
+        mask: Optional[torch.Tensor] = None,
+    ) -> torch.Tensor:
+        """
+        Forward pass of the discriminator.
+
+        Parameters
+        ----------
+        x: Input features [num_nodes, d_input]
+        t_pose: T-pose positions [num_nodes, 3]
+        edge_index: Graph connectivity [2, num_edges]
+        mask: Boolean mask for valid nodes [batch_size, max_nodes]
+
+        Returns:
+            Probability that the input is real [batch_size, 1]
+        """
         src = self.linear(x)
         src = src * self.pos_encoder(t_pose, edge_index)
 
@@ -229,22 +488,76 @@ class Discriminator(nn.Module):
         valid_prob = self.sigmoid(self.linear_cls(output[:, 0]))
 
         return valid_prob
-    
+
+
 class StyleEncoder(nn.Module):
     """
-    The style encoder is used to encode the style of the input.
-    It takes in a batch of poses that are all from the same skeleton and encodes them into a single latent vector.
-    First it encodes the poses into a latent space and then it aggregates the latent vectors into a single vector using a transformer.
-    The order of the poses is not important so positional encoding is not used.
-    A additional style token is added to the input and the output is the cls token and that is used to aggregate the poses.
+    Style encoder for extracting style information from motion data.
+
+    Takes a batch of poses from the same skeleton and encodes them into a single latent vector.
+    First encodes poses into latent space, then aggregates using a transformer.
+    The order of poses is not important, so positional encoding is not used.
+    A style token is added to aggregate pose information.
+
+    Attributes:
+        encoder: Transformer encoder for initial encoding
+        aggregator: Transformer encoder for aggregating pose encodings
+        style_token: Learnable token for style representation
     """
-    def __init__(self, d_input, d_model, nhead, num_layers, dim_feedforward=512, dropout=0):
+
+    def __init__(
+        self,
+        d_input: int,
+        d_model: int,
+        nhead: int,
+        num_layers: int,
+        dim_feedforward: int = 512,
+        dropout: float = 0,
+    ):
+        """
+        Initialize the style encoder.
+
+        Parameters
+        ----------
+        d_input: Dimension of input features
+        d_model: Dimension of the model
+        nhead: Number of attention heads
+        num_layers: Number of transformer layers
+        dim_feedforward: Dimension of feedforward network
+        dropout: Dropout probability
+        """
         super(StyleEncoder, self).__init__()
-        self.encoder = TransformerEncoder(d_input=d_input, d_model=d_model, nhead=nhead, num_layers=num_layers)
-        self.aggregator = nn.TransformerEncoder(nn.TransformerEncoderLayer(d_model, nhead, dim_feedforward, dropout, batch_first=True), num_layers)
+        self.encoder = TransformerEncoder(
+            d_input=d_input, d_model=d_model, nhead=nhead, num_layers=num_layers
+        )
+        self.aggregator = nn.TransformerEncoder(
+            nn.TransformerEncoderLayer(
+                d_model, nhead, dim_feedforward, dropout, batch_first=True
+            ),
+            num_layers,
+        )
         self.style_token = nn.Parameter(torch.randn(1, d_model))
 
-    def forward(self, x, t_pose, edge_index, mask=None):
+    def forward(
+        self,
+        x: torch.Tensor,
+        t_pose: torch.Tensor,
+        edge_index: torch.Tensor,
+        mask: Optional[torch.Tensor] = None,
+    ) -> torch.Tensor:
+        """
+        Forward pass of the style encoder.
+
+        Parameters
+        ----------
+        x: Input features [num_nodes, d_input]
+        t_pose: T-pose positions [num_nodes, 3]
+        edge_index: Graph connectivity [2, num_edges]
+        mask: Boolean mask for valid nodes [batch_size, max_nodes]
+
+        Returns:
+            Style encoding [batch_size, d_model]
+        """
         src = self.encoder(x, t_pose, edge_index, mask=mask)
         distribution_tokens = torch.stack(
             [
@@ -252,7 +565,7 @@ class StyleEncoder(nn.Module):
             ],
             dim=1,
         )
-        
+
         src = torch.cat([distribution_tokens, src], dim=1)
         mask = torch.cat(
             [torch.ones(src.shape[0], 1, dtype=bool, device=src.device), mask], dim=1
@@ -260,12 +573,22 @@ class StyleEncoder(nn.Module):
 
         output = self.aggregator(src, src_key_padding_mask=~mask)
         return output[:, 0]
-        
 
 
-def graph_to_batch(x, mask, pad_with=0):
+def graph_to_batch(
+    x: torch.Tensor, mask: torch.Tensor, pad_with: Union[int, float] = 0
+) -> torch.Tensor:
     """
-    Converts the graphs to batched zero-padded tokens
+    Converts graph data to batched zero-padded tokens.
+
+    Parameters
+    ----------
+    x: Graph node features
+    mask: Boolean mask for valid nodes
+    pad_with: Value to use for padding
+
+    Returns:
+        Padded tensor of shape [batch_size, max_nodes, feature_dim]
     """
     counts = mask.sum(1)
     nested_tensor = torch.nested.as_nested_tensor(list(torch.split(x, counts.tolist())))
@@ -274,9 +597,17 @@ def graph_to_batch(x, mask, pad_with=0):
     return padded_tensor
 
 
-def batch_to_graph(x, mask):
+def batch_to_graph(x: torch.Tensor, mask: torch.Tensor) -> Batch:
     """
-    Converts the batched zero-padded tokens to graphs
+    Converts batched zero-padded tokens back to graph data.
+
+    Parameters
+    ----------
+    x: Batched tensor [batch_size, max_nodes, feature_dim]
+    mask: Boolean mask for valid nodes [batch_size, max_nodes]
+
+    Returns:
+        PyTorch Geometric Batch object containing the graphs
     """
     return Batch.from_data_list(
         [
@@ -291,9 +622,16 @@ def batch_to_graph(x, mask):
 
 def mask_from_batch(batch: Batch) -> torch.Tensor:
     """
-    Creates a mask from the batch. The mask is True for the actual tokens and False for the padding.
-    :param batch: Batch object
-    :return: mask
+    Creates a mask from a PyTorch Geometric Batch object.
+
+    The mask is True for actual tokens and False for padding.
+
+    Parameters
+    ----------
+    batch: PyTorch Geometric Batch object
+
+    Returns:
+        Boolean mask of shape [batch_size, max_nodes]
     """
     _, counts = batch.batch.unique(return_counts=True)
     indices = torch.arange(max(counts), device=batch.batch.device)
@@ -304,7 +642,17 @@ def mask_from_batch(batch: Batch) -> torch.Tensor:
 import wandb
 
 
-def download_wandb_artefact(artifact_name):
+def download_wandb_artefact(artifact_name: str) -> Dict[str, torch.Tensor]:
+    """
+    Download a model artifact from Weights & Biases.
+
+    Parameters
+    ----------
+    artifact_name: Name of the artifact to download
+
+    Returns:
+        State dict of the model
+    """
     api = wandb.Api()
     artifact = api.artifact(artifact_name, type="model")
 

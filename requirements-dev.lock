@@ -47,9 +47,13 @@ gitdb==4.0.12
     # via gitpython
 gitpython==3.1.44
     # via wandb
+gprof2dot==2024.6.6
+    # via pytest-profiling
 idna==3.10
     # via requests
     # via yarl
+iniconfig==2.0.0
+    # via pytest
 jinja2==3.1.5
     # via torch
     # via torch-geometric
@@ -73,10 +77,13 @@ numpy==2.2.3
     # via torch-geometric
 packaging==24.2
     # via matplotlib
+    # via pytest
 pillow==11.1.0
     # via matplotlib
 platformdirs==4.3.6
     # via wandb
+pluggy==1.5.0
+    # via pytest
 propcache==0.3.0
     # via aiohttp
     # via yarl
@@ -92,6 +99,9 @@ pydantic-core==2.27.2
 pyparsing==3.2.1
     # via matplotlib
     # via torch-geometric
+pytest==8.3.5
+    # via pytest-profiling
+pytest-profiling==1.8.1
 python-dateutil==2.9.0.post0
     # via matplotlib
 pyyaml==6.0.2
@@ -110,6 +120,7 @@ setuptools==75.8.2
     # via wandb
 six==1.17.0
     # via docker-pycreds
+    # via pytest-profiling
     # via python-dateutil
 smmap==5.0.2
     # via gitdb

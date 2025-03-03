@@ -7,7 +7,7 @@ from torch_geometric.data import Data
 
 import retarget.utils.AnimationStructure as AnimationStructure
 from retarget.utils.Animation import forward_rotations
-from retarget.utils.Quaternions import Quaternions, d6_2_quat, quat_2_d6
+from retarget.utils.Quaternions import Quaternions, d6_2_quat, quat_2_d6, d6_2_rotmat, rotmat_2_d6
 
 
 class RestPoseAugmentor:
@@ -91,24 +91,26 @@ class RestPoseAugmentor:
         torch.Tensor
             New rotations in 6D representation
         """
-        transform = torch.Tensor(Quaternions(d6_2_quat(rotations)).transforms())
+        transform = torch.Tensor(d6_2_rotmat(rotations))
         rotations_new = torch.zeros(transform.shape)
+    
+        rotations_new = torch.zeros(transform.shape)
+        
+        # Handle the root node (index 0)
+        rotations_new[..., 0, :, :] = transform[..., 0, :, :] @ rotations_offset[0].T
+        # Handle all other nodes in a vectorized way
+        # For each child node, apply the parent's rotation offset, then the original transform, then the child's inverse rotation offset
+        child_indices = torch.arange(1, edges.shape[0])
+        parent_indices = edges[1:]
 
-        for i, parent in enumerate(edges):
-            if parent == -1:
-                rotations_new[..., 0, :, :] = (
-                    transform[..., 0, :, :] @ rotations_offset[0].T
-                )
-                continue
-
-            rotations_new[..., i, :, :] = (
-                rotations_offset[parent]
-                @ transform[..., i, :, :]
-                @ rotations_offset[i].T
-            )
+        rotations_new[..., child_indices, :, :] = (
+            rotations_offset[parent_indices]
+            @ transform[..., child_indices, :, :]
+            @ rotations_offset[child_indices].transpose(1, 2)
+        )
 
         new_rotations = torch.Tensor(
-            quat_2_d6(np.array(Quaternions.from_transforms(rotations_new)))
+            rotmat_2_d6(rotations_new)
         )
 
         return new_rotations
@@ -133,8 +135,20 @@ class RestPoseAugmentor:
         torch.Tensor
             Rotated offsets
         """
-        for pair in edges.T:
-            parent, children = pair
+
+        parent_indices = edges[0]
+        child_indices = edges[1]
+
+        # check if child_indices are unique
+        unique = torch.unique(child_indices).equal(child_indices)
+
+        if unique:
+            offset[child_indices] = (
+                rotations[parent_indices] @ offset[child_indices][..., None]
+            ).squeeze()
+        else:
+            for pair in edges.T:
+                parent, children = pair
             offset[children] = (
                 rotations[parent] @ offset[children][..., None]
             ).squeeze()
@@ -162,9 +176,11 @@ class RestPoseAugmentor:
         item_augment.offsets = self.offset_rotation(
             item_augment.offsets, rnd_rotations, item.edge_index
         )
+
         item_augment.d6 = self.create_new_rotations(
             rnd_rotations, item_augment.d6, item_augment.parents
         )
+        
         item_augment.pos = torch.Tensor(
             AnimationStructure.rest_pose(
                 item_augment.offsets.numpy(), item_augment.edge_index.numpy().T
@@ -324,7 +340,6 @@ class Augmentor:
 
         item_scaled_skel = self.augment_scale_skeleton_global(item)
         encoder_item, decoder_item = self.rest_pose_augmentor(item_scaled_skel)
-
         encoder_item_translated = self.augment_x_z_translation(encoder_item)
 
         return encoder_item, decoder_item, encoder_item_translated

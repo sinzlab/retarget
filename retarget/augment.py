@@ -166,7 +166,7 @@ class RestPoseAugmentor:
             rnd_rotations, item_augment.d6, item_augment.parents
         )
         item_augment.pos = torch.Tensor(
-            AnimationStructure.t_pose(
+            AnimationStructure.rest_pose(
                 item_augment.offsets.numpy(), item_augment.edge_index.numpy().T
             )
         )
@@ -284,13 +284,13 @@ class Augmentor:
             parents, scaled_offsets_prev, Quaternions(rotation_prev[None, ...])
         )[0]
 
-        t_pose = AnimationStructure.t_pose(scaled_offsets, edges)
+        rest_pose = AnimationStructure.rest_pose(scaled_offsets, edges)
 
         item_aug.root_trajectory *= self.global_skel_scale
         item_aug.position = torch.Tensor(position)
         item_aug.x[:, 6:9] = torch.Tensor(position).clone()
         item_aug.offsets = torch.Tensor(scaled_offsets)
-        item_aug.pos = torch.Tensor(t_pose)
+        item_aug.pos = torch.Tensor(rest_pose)
 
         # Set the scaled skeletons new velocity and previous frame
         item_aug.x[:, 9:12] = torch.Tensor(position_prev).clone()

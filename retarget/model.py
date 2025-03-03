@@ -103,7 +103,7 @@ class TransformerEncoder(nn.Module):
     def forward(
         self,
         x: torch.Tensor,
-        t_pose: torch.Tensor,
+        rest_pose: torch.Tensor,
         edge_index: torch.Tensor,
         mask: Optional[torch.Tensor] = None,
     ) -> Tuple[torch.Tensor, torch.Tensor]:
@@ -112,18 +112,18 @@ class TransformerEncoder(nn.Module):
 
         Parameters
         ----------
-        x: Input features of shape [num_nodes, d_input]
-        t_pose: T-pose positions of shape [num_nodes, 3]
-        edge_index: Graph connectivity of shape [2, num_edges]
-        mask: Boolean mask for valid nodes, shape [batch_size, max_nodes]
+        x: Input features [batch_size, max_nodes, d_input]
+        rest_pose: Rest pose positions of shape [num_nodes, 3]
+        edge_index: Graph connectivity [2, num_edges]
+        mask: Boolean mask for valid nodes [batch_size, max_nodes]
 
         Returns:
             Tuple containing:
-                - pose token output [batch_size, d_model]
-                - root trajectory token output [batch_size, d_model]
+                - pose latent representation [batch_size, d_model]
+                - root trajectory latent representation [batch_size, d_model]
         """
-        src = self.linear(x)
-        src = src * self.pos_encoder(t_pose, edge_index)
+        src = x.clone()
+        src = src * self.pos_encoder(rest_pose, edge_index)
 
         src = graph_to_batch(src, mask)
 
@@ -192,7 +192,7 @@ class TransformerEncoderDecoder(nn.Module):
         self,
         pose_latent: torch.Tensor,
         root_traj_latent: torch.Tensor,
-        t_pose: torch.Tensor,
+        rest_pose: torch.Tensor,
         edge_index: torch.Tensor,
         mask: Optional[torch.Tensor] = None,
     ) -> Tuple[torch.Tensor, torch.Tensor]:
@@ -203,19 +203,19 @@ class TransformerEncoderDecoder(nn.Module):
         ----------
         pose_latent: Latent pose representation [batch_size, d_model]
         root_traj_latent: Latent root trajectory representation [batch_size, d_model]
-        t_pose: T-pose positions [num_nodes, 3]
+        rest_pose: Rest pose positions [num_nodes, 3]
         edge_index: Graph connectivity [2, num_edges]
         mask: Boolean mask for valid nodes [batch_size, max_nodes]
 
         Returns:
             Tuple containing:
                 - decoded pose features [batch_size, max_nodes, d_output]
-                - decoded root trajectory [batch_size, 1, 3]
+                - decoded root trajectory [batch_size, max_nodes, 3]
         """
         src_pose = pose_latent.unsqueeze(1).repeat(1, mask.shape[1], 1)
         src_root_traj = root_traj_latent.unsqueeze(1)
 
-        pe = self.pos_encoder(t_pose, edge_index)
+        pe = self.pos_encoder(rest_pose, edge_index)
         pe = graph_to_batch(pe, mask)
         src = src_pose * pe  # multiply by positional encoding
         src_root_traj_latent = src_root_traj * self.src_root_traj_pos_enc
@@ -275,41 +275,42 @@ class TransformerAutoEncoder(nn.Module):
     def forward(
         self,
         x: torch.Tensor,
-        t_pose: torch.Tensor,
+        rest_pose: torch.Tensor,
         edge_index: torch.Tensor,
-        t_pose_decoder: Optional[torch.Tensor] = None,
+        rest_pose_decoder: Optional[torch.Tensor] = None,
         mask: Optional[torch.Tensor] = None,
     ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
         """
-        Forward pass of the autoencoder.
+        Forward pass of the transformer autoencoder.
 
         Parameters
         ----------
-        x: Input features [num_nodes, d_input]
-        t_pose: T-pose positions for encoder [num_nodes, 3]
+        x: Input features [batch_size, max_nodes, d_input]
+        rest_pose: Rest pose positions for encoder [num_nodes, 3]
         edge_index: Graph connectivity [2, num_edges]
-        t_pose_decoder: Optional different T-pose for decoder
+        rest_pose_decoder: Optional different rest pose for decoder
         mask: Boolean mask for valid nodes [batch_size, max_nodes]
 
         Returns:
             Tuple containing:
                 - decoded pose features [batch_size, max_nodes, d_output]
-                - decoded root trajectory [batch_size, 1, 3]
-                - pose latent vector [batch_size, d_model]
-                - root trajectory latent vector [batch_size, d_model]
+                - decoded root trajectory [batch_size, max_nodes, 3]
+                - mean of latent distribution [batch_size, d_model]
+                - log variance of latent distribution [batch_size, d_model]
         """
-        z_pose, z_root_traj = self.encoder(x, t_pose, edge_index, mask=mask)
+        z_pose, z_root_traj = self.encoder(x, rest_pose, edge_index, mask=mask)
+        mean, log_var = z_pose, None
 
-        if t_pose_decoder is None:
-            decoded_pose, decoded_traj = self.decoder(
-                z_pose, z_root_traj, t_pose, edge_index, mask=mask
+        if rest_pose_decoder is None:
+            output_pose, output_traj = self.decoder(
+                z_pose, z_root_traj, rest_pose, edge_index, mask=mask
             )
         else:
-            decoded_pose, decoded_traj = self.decoder(
-                z_pose, z_root_traj, t_pose_decoder, edge_index, mask=mask
+            output_pose, output_traj = self.decoder(
+                z_pose, z_root_traj, rest_pose_decoder, edge_index, mask=mask
             )
 
-        return decoded_pose, decoded_traj, z_pose, z_root_traj
+        return output_pose, output_traj, mean, log_var
 
     def reparametrize(self, mean: torch.Tensor, log_var: torch.Tensor) -> torch.Tensor:
         """
@@ -449,7 +450,7 @@ class Discriminator(nn.Module):
     def forward(
         self,
         x: torch.Tensor,
-        t_pose: torch.Tensor,
+        rest_pose: torch.Tensor,
         edge_index: torch.Tensor,
         mask: Optional[torch.Tensor] = None,
     ) -> torch.Tensor:
@@ -458,16 +459,16 @@ class Discriminator(nn.Module):
 
         Parameters
         ----------
-        x: Input features [num_nodes, d_input]
-        t_pose: T-pose positions [num_nodes, 3]
+        x: Input features [batch_size, max_nodes, d_input]
+        rest_pose: Rest pose positions [num_nodes, 3]
         edge_index: Graph connectivity [2, num_edges]
         mask: Boolean mask for valid nodes [batch_size, max_nodes]
 
         Returns:
-            Probability that the input is real [batch_size, 1]
+            Discriminator output [batch_size, 1]
         """
-        src = self.linear(x)
-        src = src * self.pos_encoder(t_pose, edge_index)
+        src = x.clone()
+        src = src * self.pos_encoder(rest_pose, edge_index)
 
         src = graph_to_batch(src, mask)
 
@@ -541,7 +542,7 @@ class StyleEncoder(nn.Module):
     def forward(
         self,
         x: torch.Tensor,
-        t_pose: torch.Tensor,
+        rest_pose: torch.Tensor,
         edge_index: torch.Tensor,
         mask: Optional[torch.Tensor] = None,
     ) -> torch.Tensor:
@@ -550,15 +551,15 @@ class StyleEncoder(nn.Module):
 
         Parameters
         ----------
-        x: Input features [num_nodes, d_input]
-        t_pose: T-pose positions [num_nodes, 3]
+        x: Input features [batch_size, max_nodes, d_input]
+        rest_pose: Rest pose positions [num_nodes, 3]
         edge_index: Graph connectivity [2, num_edges]
         mask: Boolean mask for valid nodes [batch_size, max_nodes]
 
         Returns:
             Style encoding [batch_size, d_model]
         """
-        src = self.encoder(x, t_pose, edge_index, mask=mask)
+        src = self.encoder(x, rest_pose, edge_index, mask=mask)
         distribution_tokens = torch.stack(
             [
                 self.style_token.repeat(src.shape[0], 1),

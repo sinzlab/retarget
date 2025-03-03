@@ -42,7 +42,7 @@ class Animation:
         )
 
         self.edges = AnimationStructure.edges(self.parents)
-        self.t_pose = AnimationStructure.t_pose(self.offsets, self.edges)
+        self.rest_pose = AnimationStructure.rest_pose(self.offsets, self.edges)
 
     def __op__(self, op, other):
         return Animation(
@@ -239,7 +239,7 @@ class Animation:
             rotation = torch.Tensor(rotation)
             d6 = torch.Tensor(d6)
 
-            t_pose = torch.Tensor(self.t_pose)
+            rest_pose = torch.Tensor(self.rest_pose)
             offsets = torch.Tensor(self.offsets)
             parents = torch.LongTensor(self.parents)
             edges = torch.LongTensor(self.edges.T)
@@ -257,7 +257,7 @@ class Animation:
                     d6=d6,
                     root_trajectory=root_trajectory,
                     rotation_prev=rotation_prev,
-                    pos=t_pose,
+                    pos=rest_pose,
                     offsets=offsets,
                     parents=parents,
                 )

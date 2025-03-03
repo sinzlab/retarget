@@ -497,10 +497,23 @@ def incidence(parents):
     return inc.T
 
 
-def t_pose(offsets, edges):
-    # build the T-pose from the offsets and edge_index
-    t_pose = np.zeros_like(offsets)
+def rest_pose(offsets, edges):
+    """
+    Build the rest pose from the offsets and edge_index.
+    
+    Parameters
+    ----------
+    offsets: np.ndarray
+        Joint offsets
+    edges: np.ndarray
+        Edge indices representing skeleton connectivity
+        
+    Returns
+    -------
+    np.ndarray
+        Rest pose positions
+    """
+    rest_pose = np.zeros_like(offsets)
     for edge in edges:
-        t_pose[edge[1]] = t_pose[edge[0]] + offsets[edge[1]]
-
-    return t_pose
+        rest_pose[edge[1]] = rest_pose[edge[0]] + offsets[edge[1]]
+    return rest_pose

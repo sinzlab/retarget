@@ -17,15 +17,22 @@ def load_pretrained_model(
     """
     Load a pretrained model from checkpoint.
 
-    Args:
-        model_name: Name of the model to load
-        device: Device to load the model on ('cpu' or 'cuda')
+    Parameters
+    ----------
+    model_name: str
+        Name of the model to load
+    device: str
+        Device to load the model on ('cpu' or 'cuda')
 
-    Returns:
+    Returns
+    -------
+    Tuple[TransformerAutoEncoder, Tokenizer]
         Tuple containing the loaded model and tokenizer
 
-    Raises:
-        FileNotFoundError: If the checkpoint file doesn't exist
+    Raises
+    ------
+    FileNotFoundError
+        If the checkpoint file doesn't exist
     """
     print(f"LOADING PRETRAINED MODEL: {model_name}")
     checkpoint_path = f"./models/local/{model_name}_latest_checkpoint.tar"
@@ -58,12 +65,18 @@ def prepare_animation_for_model(animation: Animation, tokenizer: Tokenizer, devi
     """
     Prepare an animation for model input by converting to graph and moving to device.
     
-    Args:
-        animation: Animation to preprocess
-        tokenizer: Tokenizer for encoding the animation
-        device: Device to move the data to
+    Parameters
+    ----------
+    animation: Animation
+        Animation to preprocess
+    tokenizer: Tokenizer
+        Tokenizer for encoding the animation
+    device: str
+        Device to move the data to
         
-    Returns:
+    Returns
+    -------
+    Tuple[Batch, torch.Tensor]
         Tuple containing the batch and mask tensors
     """
     graph_data = animation.as_graph()
@@ -90,15 +103,24 @@ def convert_model_output_to_animation(
     """
     Convert model predictions to an Animation object.
     
-    Args:
-        rotation_pred: Predicted rotations in 6D format
-        trajectory_pred: Predicted root trajectory
-        target_batch: Target batch data
-        target_animation: Target animation for reference
-        tokenizer: Tokenizer for decoding
-        scale_factor: Scale factor for positions and offsets
+    Parameters
+    ----------
+    rotation_pred: torch.Tensor
+        Predicted rotations in 6D format
+    trajectory_pred: torch.Tensor
+        Predicted root trajectory
+    target_batch: Batch
+        Target batch data
+    target_animation: Animation
+        Target animation for reference
+    tokenizer: Tokenizer
+        Tokenizer for decoding
+    scale_factor: float
+        Scale factor for positions and offsets
         
-    Returns:
+    Returns
+    -------
+    Animation
         Reconstructed animation
     """
     # Move predictions to CPU for processing
@@ -194,3 +216,42 @@ def retarget_animation(
     )
 
     return retargeted_animation
+
+def encode_animation(
+    model_name: str,
+    animation: Animation,
+    device: str = "cpu"
+) -> Tuple[torch.Tensor, torch.Tensor]:
+    """
+    Encode an animation into latent space using the specified model.
+
+    Parameters
+    ----------
+    model_name: str
+        Name of the model to use for encoding
+    animation: Animation
+        Animation to encode
+    device: str
+        Device to run inference on ('cpu' or 'cuda')
+
+    Returns
+    -------
+    Tuple[torch.Tensor, torch.Tensor]
+        Tuple containing pose latent and trajectory latent tensors
+    """
+    # Load the model and tokenizer
+    model, tokenizer = load_pretrained_model(model_name, device)
+
+    # Prepare source and target animations
+    source_batch, source_mask = prepare_animation_for_model(animation, tokenizer, device)
+
+    with torch.inference_mode():
+        # Encode the source animation into the latent space
+        pose_latent, trajectory_latent = model.encoder(
+            x=source_batch.x, 
+            rest_pose=source_batch.pos, 
+            edge_index=source_batch.edge_index, 
+            mask=source_mask
+        )
+
+    return pose_latent, trajectory_latent

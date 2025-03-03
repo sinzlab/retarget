@@ -86,6 +86,13 @@ retargeted_animation = retarget_animation(model_name, source_animation, target_a
 save('path/to/retargeted/animation.bvh', retargeted_animation, names=names)
 ```
 
+### Getting latent space
+```python
+from retarget import encode_animation
+
+pose_latent, trajectory_latent = encode_animation(model_name, source_animation)
+```
+
 ### Running from command line
 For reconstructing an animation, run
 ```bash

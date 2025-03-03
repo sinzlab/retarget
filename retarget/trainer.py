@@ -23,10 +23,18 @@ import torch_geometric
 
 def loaded_graphs_to_batch(batch, mode = "train"):
     encoder_graphs = []
+    encoder_graphs = []
 
     if mode == "train":
         decoder_graphs = []
         encoder_graphs_translated = []
+    
+        for encoder_graph, decoder_graph, encoder_graph_translated in batch:
+            encoder_graphs += encoder_graph
+            decoder_graphs += decoder_graph
+            encoder_graphs_translated += encoder_graph_translated
+            
+        return encoder_graphs, decoder_graphs, encoder_graphs_translated
     
         for encoder_graph, decoder_graph, encoder_graph_translated in batch:
             encoder_graphs += encoder_graph
@@ -40,8 +48,6 @@ def loaded_graphs_to_batch(batch, mode = "train"):
             encoder_graphs += graphs
 
         return encoder_graphs
-
-        return graph_list
 
 def trainer(
     model,
@@ -90,13 +96,22 @@ def trainer(
         epoch_root_trajectory_loss = []
         pbar = tqdm(dataloader)
 
+
         for batch in pbar:
             ### PREPARE DATA
 
             batch_idx += 1
 
             batch_encoder, batch_decoder, batch_encoder_translated = loaded_graphs_to_batch(batch, mode = "train")
+            batch_encoder, batch_decoder, batch_encoder_translated = loaded_graphs_to_batch(batch, mode = "train")
 
+            batch_encoder = torch_geometric.data.Batch.from_data_list(batch_encoder)
+            batch_decoder = torch_geometric.data.Batch.from_data_list(batch_decoder)
+            batch_encoder_translated = torch_geometric.data.Batch.from_data_list(batch_encoder_translated)
+
+            batch_encoder = batch_encoder.to(device)
+            batch_decoder = batch_decoder.to(device)
+            batch_encoder_translated = batch_encoder_translated.to(device)
             batch_encoder = torch_geometric.data.Batch.from_data_list(batch_encoder)
             batch_decoder = torch_geometric.data.Batch.from_data_list(batch_decoder)
             batch_encoder_translated = torch_geometric.data.Batch.from_data_list(batch_encoder_translated)
@@ -113,6 +128,10 @@ def trainer(
             position = graph_to_batch(batch_decoder.position, mask)
             d6 = graph_to_batch(batch_decoder.d6, mask)
             root_trajectory = graph_to_batch(batch_decoder.root_trajectory, mask)
+            mask = mask_from_batch(batch_decoder)
+            position = graph_to_batch(batch_decoder.position, mask)
+            d6 = graph_to_batch(batch_decoder.d6, mask)
+            root_trajectory = graph_to_batch(batch_decoder.root_trajectory, mask)
 
             # Set optimiser grad to zero
             optimizer.zero_grad()
@@ -122,10 +141,13 @@ def trainer(
             # Create prediction for original frame
             d6_pred, root_traj_pred, z_pose, z_root_traj = model(batch_encoder.x, batch_encoder.pos, batch_encoder.edge_index, batch_decoder.pos, mask=mask)
             d6_pred_augmented, root_traj_pred_augmented, z_pose_augmented, z_root_traj_augmented = model(batch_encoder_translated.x, batch_encoder_translated.pos, batch_encoder_translated.edge_index, mask=mask)
+            d6_pred, root_traj_pred, z_pose, z_root_traj = model(batch_encoder.x, batch_encoder.pos, batch_encoder.edge_index, batch_decoder.pos, mask=mask)
+            d6_pred_augmented, root_traj_pred_augmented, z_pose_augmented, z_root_traj_augmented = model(batch_encoder_translated.x, batch_encoder_translated.pos, batch_encoder_translated.edge_index, mask=mask)
 
             ### POST PROCESSING
 
             fk_pose, edge_indexs = fk_for_batch(
+                batch_decoder, d6_pred, quater=False, rotations_fmt="d6", device=device
                 batch_decoder, d6_pred, quater=False, rotations_fmt="d6", device=device
             )
             fk_pose = fk_pose - fk_pose[..., 0:1, :]

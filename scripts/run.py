@@ -1,12 +1,15 @@
 import argparse
 import os
 from pathlib import Path
+import time
 
 import torch
 
 from retarget.utils.BVH import load, save
-
 from retarget.pipeline import retarget_animation
+
+import warnings
+warnings.filterwarnings("ignore")
 
 
 def get_args() -> argparse.Namespace:
@@ -22,13 +25,13 @@ def get_args() -> argparse.Namespace:
     parser.add_argument(
         "--model_name", "-m",
         type=str,
-        default="worldly-terrain-399",
+        default="lemon-snowball-402",
         help="Name of the model to load",
     )
     parser.add_argument(
         "--src_path", "-s",
         type=str,
-        default="/user/kyang2/u12303/skip-dataset/train/Amy/Capoeira.bvh",
+        default="./data/Catwalk Walk.bvh",
         help="Path to source BVH file",
     )
     parser.add_argument(
@@ -78,12 +81,16 @@ if __name__ == "__main__":
         target_names = source_names
         print("No target animation provided, using source animation as target")
 
+    start_time = time.time()
     recon_anim = retarget_animation(
         model_name=args.model_name,
         source_animation=src_animation,
         target_animation=tgt_animation,
         device=device
     )
+    end_time = time.time()
+    time_taken = end_time - start_time
+    frames_per_second = len(src_animation.rotations) / time_taken
 
     # Save reconstructed and ground truth animations
     output_base = os.path.join(args.output_dir, args.src_path.stem)
@@ -91,3 +98,6 @@ if __name__ == "__main__":
     save(f"{output_base}_gt.bvh", src_animation, names=source_names)
 
     print(f"Saved animations to {args.output_dir}")
+    # report time taken on the device
+    print(f"Retargeting time: {time_taken:.2g} seconds on {device}")
+    print(f"Frames per second: {frames_per_second:.0f}")

@@ -98,7 +98,6 @@ def convert_model_output_to_animation(
     target_batch: Batch, 
     target_animation: Animation, 
     tokenizer: Tokenizer,
-    scale_factor: float = 170.0
 ) -> Animation:
     """
     Convert model predictions to an Animation object.
@@ -140,14 +139,11 @@ def convert_model_output_to_animation(
     # Create reconstructed animation with proper scaling
     reconstructed_animation = Animation(
         quaternion_rotations,
-        global_positions * scale_factor,
+        global_positions,
         target_animation.orients,
-        target_animation.offsets * scale_factor,
+        target_animation.offsets,
         target_animation.parents,
     )
-
-    reconstructed_animation.positions *= scale_factor
-    reconstructed_animation.offsets *= scale_factor
 
     return reconstructed_animation
 

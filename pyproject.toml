@@ -1,0 +1,32 @@
+[project]
+name = "retarget"
+version = "0.1.0"
+description = "Add your description here"
+authors = [
+    { name = "paul", email = "ppierzc@gmail.com" }
+]
+dependencies = [
+    "numpy",
+    "torch",
+    "torch-geometric",
+    "scipy>=1.15.2",
+]
+readme = "README.md"
+requires-python = ">= 3.8"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.rye]
+managed = true
+dev-dependencies = [
+    "wandb>=0.19.7",
+    "matplotlib>=3.10.1",
+]
+
+[tool.hatch.metadata]
+allow-direct-references = true
+
+[tool.hatch.build.targets.wheel]
+packages = ["retarget"]

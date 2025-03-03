@@ -122,7 +122,7 @@ class TransformerEncoder(nn.Module):
                 - pose latent representation [batch_size, d_model]
                 - root trajectory latent representation [batch_size, d_model]
         """
-        src = x.clone()
+        src = self.linear(x)
         src = src * self.pos_encoder(rest_pose, edge_index)
 
         src = graph_to_batch(src, mask)

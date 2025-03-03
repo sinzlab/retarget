@@ -39,6 +39,14 @@ Install SkIP in editable mode with pip:
 pip install -e .
 ```
 
+### Using Rye
+This project uses Rye as a package manager. To install Rye follow the instructions on the [Rye Install](https://rye.astral.sh/guide/installation/) page.
+
+Once you have Rye installed, you can install the project dependencies by running:
+```bash
+rye sync
+```
+
 ---
 
 ## Usage 📦

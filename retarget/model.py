@@ -218,7 +218,7 @@ class TransformerEncoderDecoder(nn.Module):
         pe = self.pos_encoder(rest_pose, edge_index)
         pe = graph_to_batch(pe, mask)
         src = src_pose * pe  # multiply by positional encoding
-        src_root_traj_latent = src_root_traj * self.src_root_traj_pos_enc
+        src_root_traj = src_root_traj * self.src_root_traj_pos_enc
         src = torch.cat([src, src_root_traj], dim=1)
         mask = torch.cat(
             [mask, torch.ones(src.shape[0], 1, dtype=bool, device=src.device)], dim=1

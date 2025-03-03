@@ -44,7 +44,13 @@ def collate_fn(data: List[Any]) -> List[Any]:
     return data
 
 
-def main(config: Dict[str, Any], notes: str, output_dir: str) -> None:
+def main(
+    config: Dict[str, Any],
+    notes: str,
+    output_dir: str,
+    device: str,
+    deactivate_wandb: bool,
+) -> None:
     """
     Main training function for the SkIP model.
 
@@ -52,6 +58,8 @@ def main(config: Dict[str, Any], notes: str, output_dir: str) -> None:
         config: Dictionary containing all configuration parameters
         notes: Notes about the current training run
         output_dir: Directory to save model checkpoints and artifacts
+        device: Device to train/test the model on
+        deactivate_wandb: Boolean to decide wheter the run should be logged
     """
     torch.backends.cudnn.benchmark = True
 
@@ -68,9 +76,16 @@ def main(config: Dict[str, Any], notes: str, output_dir: str) -> None:
     nhead = config["model"]["nhead"]
     num_layers = config["model"]["num_layers"]
 
-    wandb.init(
-        entity="sinzlab", project="retarget", dir="./.wandb", config=config, notes=notes
-    )
+    if deactivate_wandb:
+        wandb.init("disabled")
+    else:
+        wandb.init(
+            entity="sinzlab",
+            project="retarget",
+            dir="./.wandb",
+            config=config,
+            notes=notes,
+        )
 
     # save the model config
     with open(output_dir + "/model_config.json", "w") as f:
@@ -120,6 +135,7 @@ def main(config: Dict[str, Any], notes: str, output_dir: str) -> None:
         resume_checkpoint=config["resume"],
         config=config,
         output_dir=output_dir,
+        device=device,
     )
 
     # Save model
@@ -147,10 +163,27 @@ if __name__ == "__main__":
         default="./models/local",
         help="Path to the output directory",
     )
+    parser.add_argument(
+        "--device",
+        type=str,
+        default="cuda",
+        help="Device, to train/test the model",
+    )
+    parser.add_argument(
+        "--deactivate_wandb",
+        action="store_true",
+        help="Decision to log wandb or not",
+    )
 
     args = parser.parse_args()
 
     # Load configuration from YAML file
     config = load_config(args.config)
 
-    main(config["config"], config["notes"], args.output_dir)
+    main(
+        config["config"],
+        config["notes"],
+        args.output_dir,
+        device=args.device,
+        deactivate_wandb=args.deactivate_wandb,
+    )

@@ -3,7 +3,6 @@
 /.vagrant
 /.venv
 /Vagrantfile
-/data
 /notebooks
 /singularity.sh
 /vm-singularity

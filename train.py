@@ -28,6 +28,7 @@ from retarget.dataset import SkIPDataset
 from retarget.model import TransformerAutoEncoder
 from retarget.trainer import trainer
 from retarget.utils.config import load_config
+from retarget.augment import get_augmentors
 
 
 def collate_fn(data: List[Any]) -> List[Any]:
@@ -61,7 +62,7 @@ def main(config: Dict[str, Any], notes: str, output_dir: str) -> None:
     resume = config["resume"]
 
     # model parameters
-    batch_size = config["model"]["batch_size"]
+    batch_size = config["batch_size"]
     d_model = config["model"]["d_model"]
     d_input = config["model"]["d_input"]
     nhead = config["model"]["nhead"]
@@ -76,6 +77,8 @@ def main(config: Dict[str, Any], notes: str, output_dir: str) -> None:
         json.dump(config["model"], f)
 
     wandb.save(output_dir + "/model_config.json")
+
+    print(get_augmentors(config))
 
     # Data
     train_data = SkIPDataset(

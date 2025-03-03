@@ -1,9 +1,9 @@
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple, Union
-
+import re
 from torch_geometric.data import Data, Dataset
 
-from retarget.augment import Augmentor
+from retarget.augment import Augmentions, RestPoseAugmentor, GlobalSkeletonAugmentor, XZTranslationAugmentor
 from retarget.utils.Animation import Animation
 from retarget.utils.BVH import load
 
@@ -22,6 +22,7 @@ class SkIPDataset(Dataset):
         mode: str = "train",
         ground_feet: bool = False,
         cons_q: int = 8,
+        augmentors: List[str] = [RestPoseAugmentor(), GlobalSkeletonAugmentor(), XZTranslationAugmentor()],
     ) -> None:
         """
         Initialize the dataset.
@@ -43,6 +44,11 @@ class SkIPDataset(Dataset):
         frame_times: Dict[str, Dict[str, float]] = {}
 
         self.cons_q = cons_q
+
+        augmentor_name = lambda augmentor: re.sub(r'(?<!^)(?=[A-Z])', '_', augmentor.__class__.__name__).lower()
+        self.augmentor = Augmentions(**{
+            augmentor_name(augmentor): augmentor for augmentor in augmentors
+        })
 
         characters = list(Path(directory).glob("*"))
 
@@ -135,7 +141,7 @@ class SkIPDataset(Dataset):
         return len(self.data) // self.cons_q
 
     def get_one_item(
-        self, idx: int, augmentor: Optional[Augmentor] = None
+        self, idx: int
     ) -> Union[Data, Tuple[Data, Data, Data, float]]:
         """
         Get a single item from the dataset.
@@ -159,7 +165,7 @@ class SkIPDataset(Dataset):
             # If the mode is "train", then also define the frame time
             frame_time = 1 / 30  # self.time[idx]
 
-            encoder_item, decoder_item, encoder_item_translated = augmentor(item)
+            encoder_item, decoder_item, encoder_item_translated = self.augmentor(item)
             return encoder_item, decoder_item, encoder_item_translated, frame_time
         return item
 
@@ -186,11 +192,11 @@ class SkIPDataset(Dataset):
             decoder_items: List[Data] = []
             encoder_items_translated: List[Data] = []
 
-            augmentor = Augmentor()
+            self.augmentor.reset()
 
             for i in range(self.cons_q):
                 encoder_item, decoder_item, encoder_item_translated, f_time = (
-                    self.get_one_item(idx * self.cons_q + i, augmentor)
+                    self.get_one_item(idx * self.cons_q + i)
                 )
                 encoder_items.append(encoder_item)
                 decoder_items.append(decoder_item)

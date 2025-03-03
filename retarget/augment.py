@@ -1,4 +1,4 @@
-from typing import List, Tuple
+from typing import List, Tuple, Optional, Dict, Any
 
 import numpy as np
 import torch
@@ -9,8 +9,24 @@ import retarget.utils.AnimationStructure as AnimationStructure
 from retarget.utils.Animation import forward_rotations
 from retarget.utils.Quaternions import Quaternions, d6_2_quat, quat_2_d6, d6_2_rotmat, rotmat_2_d6
 
+class Augmentor:
+    """
+    Base class for all augmentors.
+    """
 
-class RestPoseAugmentor:
+    def reset(self):
+        """
+        Reset the augmentor to new random parameters.
+        """
+        pass
+    
+    def __call__(self, item: Data) -> Data:
+        """
+        Apply the augmentor to the input data.
+        """
+        pass
+
+class RestPoseAugmentor(Augmentor):
     """
     Class for augmenting T-pose data by applying random rotations to the skeleton.
 
@@ -209,65 +225,30 @@ class RestPoseAugmentor:
         decoder_item = self.augment_data(item)
 
         return encoder_item, decoder_item
+    
 
-
-class Augmentor:
+class GlobalSkeletonAugmentor(Augmentor):
     """
-    Class to handle various augmentations for data training including
-    translation, scaling, and T-pose augmentation.
-
-    Attributes:
-        global_skel_scale: Global scaling factor for the skeleton
-        x_translation: Translation along the x-axis
-        z_translation: Translation along the z-axis
-        Tpose_Augmentor: Augmentor for T-pose variations
+    Class for augmenting the global skeleton by scaling and translating the skeleton.
     """
-
-    def __init__(self, max_translation: float = 10):
+    
+    def __init__(self):
         """
-        Initialize the augmentor with random scaling and translation parameters.
-
-        Parameters
-        ----------
-        max_translation: float
-            Maximum translation distance in any direction
+        Initialize the global skeleton augmentor with random scaling and translation parameters.
         """
-        # Define self.global_skel_scale, to augment the skeleton size
+        self.reset()
+
+    def reset(self):
+        """
+        Reset the global skeleton augmentor to its initial state.
+        """
         if np.random.rand() < 0.25:
             self.global_skel_scale = np.random.uniform(0.5, 1.5)
         else:
             self.global_skel_scale = 1.0
 
-        # Define self.x/z_translation, to augment the root trajectory along the x and z axis
-        self.x_translation = torch.rand(1) * max_translation
-        self.z_translation = torch.rand(1) * max_translation
-        self.rest_pose_augmentor = RestPoseAugmentor()
-
-    def augment_x_z_translation(self, item: Data) -> Data:
-        """
-        Augment the root trajectory by translating along x and z axes.
-
-        Parameters
-        ----------
-        item: Data
-            Torch geometric graph data, storing the pose information for one frame
-
-        Returns
-        -------
-        item_aug: Data
-            Torch geometric graph data with augmented x and z root trajectories
-        """
-
-        # Augment root trajectory
-        item_aug = item.clone()
-        item_aug.root_trajectory[:, 0] += self.x_translation
-        item_aug.root_trajectory[:, 2] += self.z_translation
-        item_aug.x[:, 15] += self.x_translation
-        item_aug.x[:, 17] += self.z_translation
-
-        return item_aug
-
-    def augment_scale_skeleton_global(self, item: Data) -> Data:
+        
+    def __call__(self, item: Data) -> Data:
         """
         Scale the skeleton globally by the predefined scaling factor.
 
@@ -315,6 +296,76 @@ class Augmentor:
 
         return item_aug
 
+class XZTranslationAugmentor(Augmentor):
+    """
+    Class for augmenting the x and z translations of the skeleton.
+    """
+    
+    def __init__(self, max_translation: float = 10):
+        self.x_translation = torch.rand(1) * max_translation
+        self.z_translation = torch.rand(1) * max_translation
+
+    def __call__(self, item: Data) -> Data:
+        """
+        Augment the root trajectory by translating along x and z axes.
+
+        Parameters
+        ----------
+        item: Data
+            Torch geometric graph data, storing the pose information for one frame
+
+        Returns
+        -------
+        item_aug: Data
+            Torch geometric graph data with augmented x and z root trajectories
+        """
+
+        # Augment root trajectory
+        item_aug = item.clone()
+        item_aug.root_trajectory[:, 0] += self.x_translation
+        item_aug.root_trajectory[:, 2] += self.z_translation
+        item_aug.x[:, 15] += self.x_translation
+        item_aug.x[:, 17] += self.z_translation
+
+        return item_aug
+
+class Augmentions:
+    """
+    Class to handle various augmentations for data training including
+    translation, scaling, and T-pose augmentation.
+
+    Attributes:
+        augmentors: List of augmentors to apply
+    """
+
+    def __init__(self, rest_pose_augmentor: Optional[RestPoseAugmentor] = None, global_skeleton_augmentor: Optional[GlobalSkeletonAugmentor] = None, x_z_translation_augmentor: Optional[XZTranslationAugmentor] = None):
+        """
+        Initialize the augmentor with random scaling and translation parameters.
+
+        Parameters
+        ----------
+        rest_pose_augmentor: RestPoseAugmentor
+            Augmentor for T-pose augmentation
+        global_skeleton_augmentor: GlobalSkeletonAugmentor
+            Augmentor for global skeleton augmentation
+        xz_translation_augmentor: XZTranslationAugmentor
+            Augmentor for x and z translation augmentation
+        """
+        self.rest_pose_augmentor = rest_pose_augmentor
+        self.global_skeleton_augmentor = global_skeleton_augmentor
+        self.x_z_translation_augmentor = x_z_translation_augmentor
+
+    def reset(self):
+        """
+        Reset the augmentor to new random parameters.
+        """
+        if self.rest_pose_augmentor:
+            self.rest_pose_augmentor.reset()
+        if self.global_skeleton_augmentor:
+            self.global_skeleton_augmentor.reset()
+        if self.x_z_translation_augmentor:
+            self.x_z_translation_augmentor.reset()
+
     def __call__(self, item: Data) -> Tuple[Data, Data, Data]:
         """
         Apply multiple augmentations to the input data.
@@ -338,8 +389,35 @@ class Augmentor:
                     Encoder item with additional x-z translation augmentation
         """
 
-        item_scaled_skel = self.augment_scale_skeleton_global(item)
-        encoder_item, decoder_item = self.rest_pose_augmentor(item_scaled_skel)
-        encoder_item_translated = self.augment_x_z_translation(encoder_item)
+        if self.global_skeleton_augmentor:
+            item_scaled_skel = self.global_skeleton_augmentor(item)
+
+        if self.rest_pose_augmentor:
+            encoder_item, decoder_item = self.rest_pose_augmentor(item_scaled_skel)
+
+        if self.x_z_translation_augmentor:
+            encoder_item_translated = self.x_z_translation_augmentor(encoder_item)
 
         return encoder_item, decoder_item, encoder_item_translated
+
+
+AUGMENTORS = {
+    "rest_pose_augmentor": RestPoseAugmentor,
+    "global_skeleton_augmentor": GlobalSkeletonAugmentor,
+    "x_z_translation_augmentor": XZTranslationAugmentor,
+}
+
+def get_augmentors(config: Dict[str, Any]) -> List[Augmentor]:
+    """
+    Get the augmentors from the config.
+    """
+
+    augmentors = []
+
+    for key, value in config["dataset"]["augmentors"].items():
+        if value:
+            augmentors.append(AUGMENTORS[key](**value))
+        else:
+            augmentors.append(AUGMENTORS[key]())
+
+    return augmentors

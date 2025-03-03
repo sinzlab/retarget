@@ -300,7 +300,7 @@ def constraints(anim, **kwargs):
         masses = 1.0 / (0.1 + np.absolute(points_offsets[:, 1]))
         masses = masses[np.newaxis].repeat(len(anim), axis=0)
 
-    for j in xrange(anim.shape[1]):
+    for j in range(anim.shape[1]):
 
         """Add constraints between all joints and their children"""
         for c0 in children[j]:
@@ -434,8 +434,8 @@ def distances(anim):
         generated[i, j] = True
         generated[j, i] = True
 
-    for i in xrange(anim.shape[1]):
-        for j in xrange(anim.shape[1]):
+    for i in range(anim.shape[1]):
+        for j in range(anim.shape[1]):
             find_distance(distances, generated, -1, i, j)
 
     return distances

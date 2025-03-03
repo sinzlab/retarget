@@ -2,6 +2,7 @@ import numpy as np
 import torch
 
 
+
 class Quaternions:
     """
     Quaternions is a wrapper around a numpy ndarray
@@ -455,7 +456,7 @@ class Quaternions:
             qs[..., 0] = 1.0
             return Quaternions(qs)
 
-        if isinstance(n, int) or isinstance(n, long):
+        if isinstance(n, int):
             qs = np.zeros((n, 4))
             qs[:, 0] = 1.0
             return Quaternions(qs)

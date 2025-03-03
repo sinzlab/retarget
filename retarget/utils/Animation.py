@@ -168,7 +168,7 @@ class Animation:
         )
 
     @classmethod
-    def unravel(clas, anim, shape, parents):
+    def unravel(cls, anim, shape, parents):
         nf, nj = shape
         rotations = anim[nf * nj * 0 : nf * nj * 3]
         positions = anim[nf * nj * 3 : nf * nj * 6]

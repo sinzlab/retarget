@@ -488,7 +488,7 @@ def save(
     anim,
     names=None,
     frametime=1.0 / 24.0,
-    order="zyx",
+    order="xyz",
     positions=False,
     orients=True,
 ):
@@ -563,9 +563,11 @@ def save(
         #    rots = np.degrees((-anim.orients[np.newaxis] * anim.rotations).euler(order=order[::-1]))
         # else:
         #    rots = np.degrees(anim.rotations.euler(order=order[::-1]))
-        rots = np.degrees(anim.rotations.euler(order=order[::-1]))
+        #rots = np.degrees(anim.rotations.euler(order=order[::-1]))
+        #poss = anim.positions
+        rots = np.degrees(anim.rotations.euler(order="xyz"))
         poss = anim.positions
-
+        
         for i in range(anim.shape[0]):
             for j in range(anim.shape[1]):
 

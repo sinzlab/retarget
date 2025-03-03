@@ -83,13 +83,14 @@ class TransformerEncoderDecoder(nn.Module):
         self.linear_traj = nn.Linear(d_model, 3)
         
     def forward(self, pose_latent, root_traj_latent, t_pose, edge_index, mask=None):
+
         src_pose = pose_latent.unsqueeze(1).repeat(1, mask.shape[1], 1)
         src_root_traj = root_traj_latent.unsqueeze(1)
         
         pe = self.pos_encoder(t_pose, edge_index)
         pe = graph_to_batch(pe, mask)
         src = src_pose * pe  # multiply by positional encoding
-        src_root_traj_latent = src_root_traj_latent + src_root_traj_pos_enc 
+        src_root_traj_latent = src_root_traj * self.src_root_traj_pos_enc 
         src = torch.cat([src, src_root_traj], dim=1)
         mask = torch.cat(
             [mask, torch.ones(src.shape[0], 1, dtype=bool, device=src.device)], dim=1
@@ -114,10 +115,14 @@ class TransformerAutoEncoder(nn.Module):
 
         self.decoder = TransformerEncoderDecoder(d_output = d_input - 3, d_model = d_model, nhead=nhead, num_layers = num_layers)
 
-    def forward(self, x, t_pose, edge_index, mask=None):
+    def forward(self, x, t_pose, edge_index, t_pose_decoder = None, mask=None):
         z_pose, z_root_traj = self.encoder(x, t_pose, edge_index, mask=mask)
 
-        decoded_pose, decoded_traj = self.decoder(z_pose, z_root_traj, t_pose, edge_index, mask=mask)
+        if t_pose_decoder is None:
+            decoded_pose, decoded_traj = self.decoder(z_pose, z_root_traj, t_pose, edge_index, mask=mask)
+        else:
+            decoded_pose, decoded_traj = self.decoder(z_pose, z_root_traj, t_pose_decoder, edge_index, mask=mask)
+            
         return decoded_pose, decoded_traj, z_pose, z_root_traj
 
     def reparametrize(self, mean, log_var):

@@ -33,21 +33,25 @@ import torch_geometric
 
 
 def loaded_graphs_to_batch(batch, mode = "train"):
-    graph_list = []
+    encoder_graphs = []
 
     if mode == "train":
-        graph_list_augment = []
+        decoder_graphs = []
+        encoder_graphs_translated = []
     
-        for graphs, graphs_augmented in batch:
-            graph_list += graphs
-            graph_list_augment += graphs_augmented
-
-        return graph_list, graph_list_augment
+        for encoder_graph, decoder_graph, encoder_graph_translated in batch:
+            encoder_graphs += encoder_graph
+            decoder_graphs += decoder_graph
+            encoder_graphs_translated += encoder_graph_translated
+            
+        return encoder_graphs, decoder_graphs, encoder_graphs_translated
+    
     else:
         for graphs in batch:
-            graph_list += graphs
+            encoder_graphs += graphs
 
-        return graph_list
+        return encoder_graphs
+
 def trainer(
     model,
     dataloader,
@@ -94,37 +98,38 @@ def trainer(
         epoch_loss = []
         epoch_root_trajectory_loss = []
         pbar = tqdm(dataloader)
-        # lr_scheduler = get_cosine_schedule_with_warmup(optimizer, num_warmup_steps=200, num_training_steps=len(dataloader))
-        # lr_scheduler = get_cosine_with_hard_restarts_schedule_with_warmup(optimizer, num_warmup_steps=200, num_training_steps=len(dataloader) * num_epochs, num_cycles=num_epochs)
+
         for batch in pbar:
             batch_idx += 1
 
-            batch, batch_augmented = loaded_graphs_to_batch(batch, mode = "train")
+            batch_encoder, batch_decoder, batch_encoder_translated = loaded_graphs_to_batch(batch, mode = "train")
 
-            batch = torch_geometric.data.Batch.from_data_list(batch)
-            batch_augmented = torch_geometric.data.Batch.from_data_list(batch_augmented)
-            
-            batch = batch.to(device)
-            batch_augmented = batch_augmented.to(device)
+            batch_encoder = torch_geometric.data.Batch.from_data_list(batch_encoder)
+            batch_decoder = torch_geometric.data.Batch.from_data_list(batch_decoder)
+            batch_encoder_translated = torch_geometric.data.Batch.from_data_list(batch_encoder_translated)
+
+            batch_encoder = batch_encoder.to(device)
+            batch_decoder = batch_decoder.to(device)
+            batch_encoder_translated = batch_encoder_translated.to(device)
 
             # frame_time = frame_time[:, None, None].to(device)
             fps = 1 / 30
 
             # Create mask, position and d6 for original frame
-            mask = mask_from_batch(batch)
-            position = graph_to_batch(batch.position, mask)
-            d6 = graph_to_batch(batch.d6, mask)
-            root_trajectory = graph_to_batch(batch.root_trajectory, mask)
+            mask = mask_from_batch(batch_decoder)
+            position = graph_to_batch(batch_decoder.position, mask)
+            d6 = graph_to_batch(batch_decoder.d6, mask)
+            root_trajectory = graph_to_batch(batch_decoder.root_trajectory, mask)
 
             # Set optimiser grad to zero
             optimizer.zero_grad()
 
             # Create prediction for original frame
-            d6_pred, root_traj_pred, z_pose, z_root_traj = model(batch.x, batch.pos, batch.edge_index, mask=mask)
-            d6_pred_augmented, root_traj_pred_augmented, z_pose_augmented, z_root_traj_augmented = model(batch_augmented.x, batch_augmented.pos, batch_augmented.edge_index, mask=mask)
+            d6_pred, root_traj_pred, z_pose, z_root_traj = model(batch_encoder.x, batch_encoder.pos, batch_encoder.edge_index, batch_decoder.pos, mask=mask)
+            d6_pred_augmented, root_traj_pred_augmented, z_pose_augmented, z_root_traj_augmented = model(batch_encoder_translated.x, batch_encoder_translated.pos, batch_encoder_translated.edge_index, mask=mask)
 
             fk_pose, edge_indexs = fk_for_batch(
-                batch, d6_pred, quater=False, rotations_fmt="d6", device=device
+                batch_decoder, d6_pred, quater=False, rotations_fmt="d6", device=device
             )
             fk_pose = fk_pose - fk_pose[..., 0:1, :]
 

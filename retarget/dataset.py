@@ -8,7 +8,7 @@ import retarget.utils.AnimationStructure as AnimationStructure
 from retarget.utils.Animation import forward_rotations
 from retarget.utils.BVH import load
 from retarget.utils.Quaternions_old import Quaternions, quat_2_d6
-
+from retarget.augment import Augmentor
 
 class MixamoDataset(Dataset):
     def __init__(self, directory, mode="train", ground_feet=False, cons_q=8):
@@ -109,7 +109,7 @@ class MixamoDataset(Dataset):
     def __len__(self):
         return len(self.data) // self.cons_q
 
-    def get_one_item(self, idx, global_skel_scale=None, x_translation=None, z_translation=None):
+    def get_one_item(self, idx, augmentor = None):
         item = self.data[self.data_idx[idx]].clone()
 
         if self.mode == "train":
@@ -117,73 +117,32 @@ class MixamoDataset(Dataset):
             # If the mode is "train", then also define the frame time
             frame_time = 1 / 30  # self.time[idx]
 
-            scaled_offsets = item.offsets.numpy().copy() * global_skel_scale
-            scaled_offsets_prev = scaled_offsets.copy()
-
-            # For original frame
-            parents = item.parents.numpy()
-            rotation = item.rotation.numpy()
-            rotation_prev = item.rotation_prev.numpy()
-            edges = item.edge_index.numpy().T
-
-            position = forward_rotations(
-                parents, scaled_offsets, Quaternions(rotation[None, ...])
-            )[0]
-
-            position_prev = forward_rotations(
-                parents, scaled_offsets_prev, Quaternions(rotation_prev[None, ...])
-            )[0]
-
-            t_pose = AnimationStructure.t_pose(scaled_offsets, edges)
-
-            item.root_trajectory *= global_skel_scale
-            item.position = torch.Tensor(position)
-            item.x[:, 6:9] = torch.Tensor(position).clone()
-            item.offsets = torch.Tensor(scaled_offsets)
-            item.pos = torch.Tensor(t_pose)
-
-            # Set the scaled skeletons new velocity and previous frame
-            item.x[:, 9:12] = torch.Tensor(position_prev).clone()
-            item.x[:, 12:15] = torch.Tensor(position - position_prev).clone()
-            item.x[:, 15:] *= global_skel_scale
-
-            #Augment root trajectory
-            item_aug = item.clone()
-            item_aug.root_trajectory[:,0] += x_translation
-            item_aug.root_trajectory[:,2] += z_translation
-            item_aug.x[:,15] += x_translation
-            item_aug.x[:,17] += z_translation
-
-            return item, item_aug, frame_time
+            encoder_item, decoder_item, encoder_item_translated = augmentor.get_augmentations(item)
+            return encoder_item, decoder_item, encoder_item_translated, frame_time
         return item
 
     def __getitem__(self, idx):
 
-        item = []
-        item_aug = []
-
+        encoder_items = []
         if self.mode == "train":
             frame_time = []
-
-            if np.random.rand() < 0.25:
-                global_skel_scale = np.random.uniform(0.5, 1.5)
-            else:
-                global_skel_scale = 1.0
-
-            x_translation = torch.rand(1) * 10
-            z_translation = torch.rand(1) * 10
+            decoder_items = []
+            encoder_items_translated = []
+        
+            augmentor = Augmentor()
 
             for i in range(self.cons_q):
             
-                it,it_augmented, f_time = self.get_one_item(idx * self.cons_q + i, global_skel_scale, x_translation, z_translation)
-                item.append(it)
-                item_aug.append(it_augmented)
+                encoder_item, decoder_item, encoder_item_translated, f_time = self.get_one_item(idx * self.cons_q + i, augmentor)
+                encoder_items.append(encoder_item)
+                decoder_items.append(decoder_item)
+                encoder_items_translated.append(encoder_item_translated)
                 frame_time.append(f_time)
 
-            return item, item_aug  # , frame_time
+            return encoder_items, decoder_items, encoder_items_translated  # , frame_time
 
         for i in range(self.cons_q):
             it = self.get_one_item(idx * self.cons_q + i)
-            item.append(it)
+            encoder_items.append(it)
 
-        return item
+        return encoder_items

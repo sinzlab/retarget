@@ -78,16 +78,19 @@ def main(config: Dict[str, Any], notes: str, output_dir: str) -> None:
 
     wandb.save(output_dir + "/model_config.json")
 
-    print(get_augmentors(config))
+    # get augmentors
+    augmentors = get_augmentors(config)
 
     # Data
     train_data = SkIPDataset(
         directory=config["dataset"]["path"] + "/" + config["dataset"]["train_dir"],
         mode="train",
+        augmentors=augmentors,
     )
     test_data = SkIPDataset(
         directory=config["dataset"]["path"] + "/" + config["dataset"]["test_dir"],
         mode="test",
+        augmentors=augmentors,
     )
     train_dataloader = DataLoader(
         train_data, batch_size=batch_size, shuffle=True, collate_fn=collate_fn

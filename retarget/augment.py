@@ -398,7 +398,12 @@ class Augmentions:
         if self.x_z_translation_augmentor:
             encoder_item_translated = self.x_z_translation_augmentor(encoder_item)
 
-        return encoder_item, decoder_item, encoder_item_translated
+        if self.rest_pose_augmentor and self.global_skeleton_augmentor:
+            return encoder_item, decoder_item, encoder_item_translated
+        elif self.rest_pose_augmentor:
+            return encoder_item, decoder_item
+        elif self.global_skeleton_augmentor:
+            return item_scaled_skel
 
 
 AUGMENTORS = {

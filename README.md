@@ -10,18 +10,18 @@ Welcome to **SkIP**, a framework for abstracting skeletal topology into a shared
 
 ---
 ## Table of Contents
-- [Overview](#overview-🚀)
-- [Installation](#installation-🔧)
-- [Usage](#usage-📦)
+- [Overview](#overview-)
+- [Installation](#installation-)
+- [Usage](#usage-)
   - [Command Line Interface](#1-command-line-interface-cli)
   - [Python API](#2-python-api)
-- [Reproducing Results](#reproducing-results-🎯)
+- [Reproducing Results](#reproducing-results-)
   - [Data Preparation](#data-preparation)   
   - [Wandb Setup](#wandb-setup)
   - [Docker & Training](#docker--training)
-- [Datasets](#datasets-📚)
-- [Contributing](#contributing-🤝)
-- [License](#license-📝)
+- [Datasets](#datasets-)
+- [Contributing](#contributing-)
+- [License](#license-)
 
 ---
 

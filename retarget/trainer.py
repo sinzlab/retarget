@@ -146,6 +146,8 @@ def trainer(
 
             ### POST PROCESSING
 
+            ### POST PROCESSING
+
             fk_pose, edge_indexs = fk_for_batch(
                 batch_decoder, d6_pred, quater=False, rotations_fmt="d6", device=device
                 batch_decoder, d6_pred, quater=False, rotations_fmt="d6", device=device

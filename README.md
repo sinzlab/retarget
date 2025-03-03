@@ -42,9 +42,9 @@ docker compose build base
 ```
 
 
-### Run TASE training
+### Run SkIP training
 ```bash
-docker compose run python train_mixamo.py
+docker compose run python train.py --config configs/main.yaml --output_dir ./models/local
 ```
 
 ## Using the model

@@ -21,17 +21,6 @@ from retarget.utils.Quaternions_old import d6_2_rotmat
 from retarget.utils.scheduler import CosineAnnealingWarmupRestarts
 import torch_geometric
 
-# try:
-#     from transformers import get_cosine_schedule_with_warmup, get_cosine_with_hard_restarts_schedule_with_warmup
-# except ImportError:
-#     import warnings
-#     warnings.warn("Transformers is not installed. Installing it now.")
-#     import subprocess
-#     import sys
-#     subprocess.check_call([sys.executable, "-m", "pip", "install", "transformers"])
-#     from transformers import get_cosine_schedule_with_warmup, get_cosine_with_hard_restarts_schedule_with_warmup
-
-
 def loaded_graphs_to_batch(batch, mode = "train"):
     encoder_graphs = []
 
@@ -52,16 +41,18 @@ def loaded_graphs_to_batch(batch, mode = "train"):
 
         return encoder_graphs
 
+        return graph_list
+
 def trainer(
     model,
     dataloader,
     test_dataloader,
     device="cuda",
     num_epochs=500,
-    val_loss_scale=1 / 30,
-    acc_loss_scale=0.00001,
     resume_from_epoch=None,
     resume_checkpoint=None,
+    config=None,
+    output_dir=None,
 ):
 
     wandb_name = wandb.run.name
@@ -100,6 +91,8 @@ def trainer(
         pbar = tqdm(dataloader)
 
         for batch in pbar:
+            ### PREPARE DATA
+
             batch_idx += 1
 
             batch_encoder, batch_decoder, batch_encoder_translated = loaded_graphs_to_batch(batch, mode = "train")
@@ -124,9 +117,13 @@ def trainer(
             # Set optimiser grad to zero
             optimizer.zero_grad()
 
+            ### FORWARD PASS
+
             # Create prediction for original frame
             d6_pred, root_traj_pred, z_pose, z_root_traj = model(batch_encoder.x, batch_encoder.pos, batch_encoder.edge_index, batch_decoder.pos, mask=mask)
             d6_pred_augmented, root_traj_pred_augmented, z_pose_augmented, z_root_traj_augmented = model(batch_encoder_translated.x, batch_encoder_translated.pos, batch_encoder_translated.edge_index, mask=mask)
+
+            ### POST PROCESSING
 
             fk_pose, edge_indexs = fk_for_batch(
                 batch_decoder, d6_pred, quater=False, rotations_fmt="d6", device=device
@@ -139,6 +136,8 @@ def trainer(
             )
             item, idx = torch.where(edge_indexs[:, :, 0] == 0)
             children_mask[item, edge_indexs[item, idx, 1]] = 1
+
+            ### COMPUTE LOSSES
 
             # compute losses
             train_losses = Losses(
@@ -158,24 +157,25 @@ def trainer(
                 consec_frames=8,
             ).losses
 
-            loss = (
-                100 * train_losses["recn_loss"]
-                + 100 * train_losses["recn_loss_root_children"]
-                #+ 5 * train_losses["d6_loss"]
-                + 5 * train_losses["geodesic_loss"]
-                + 1 * train_losses["vel_loss"]
-                + 1 * acc_loss_scale * train_losses["acc_loss"]
-                + 10 * train_losses["root_trajectory_loss"]
-                + train_losses["z_pose_loss"]
-            )
+
+            # use the weights defined in the config to compute the loss
+            loss = sum([
+                config["loss_weights"][key] * train_losses[key]
+                for key in config["loss_weights"]
+            ])
 
             loss = loss.mean()
+
+            ### BACKWARD PASS
 
             loss.backward()
             # clip gradients
             torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
 
             optimizer.step()
+
+            ### LOGGING
+
             losses.append(train_losses["recn_loss"].item() * 170)
             root_trajectory_losses.append(
                 train_losses["root_trajectory_loss"].item() * 170
@@ -190,13 +190,13 @@ def trainer(
 
             wandb.log(
                 {
-                    "loss": 170 * train_losses["recn_loss"].item(),
-                    "angle loss": train_losses["d6_loss"].item(),
-                    "geodesic loss": train_losses["geodesic_loss"].item(),
-                    "velocity loss": 170 * train_losses["vel_loss"].item() / fps,
-                    "jerk loss": 170 * train_losses["acc_loss"].item() * fps,
-                    "root traj loss": 170 * train_losses["root_trajectory_loss"].item(),
-                    "z pose loss": train_losses["z_pose_loss"].item(),
+                    "train/loss": 170 * train_losses["recn_loss"].item(),
+                    "train/angle loss": train_losses["d6_loss"].item(),
+                    "train/geodesic loss": train_losses["geodesic_loss"].item(),
+                    "train/velocity loss": 170 * train_losses["vel_loss"].item() / fps,
+                    "train/jerk loss": 170 * train_losses["acc_loss"].item() * fps,
+                    "train/root traj loss": 170 * train_losses["root_trajectory_loss"].item(),
+                    "train/z pose loss": train_losses["z_pose_loss"].item(),
                 }
             )
 
@@ -245,8 +245,8 @@ def trainer(
 
         if np.mean(val_losses) < prev_best_val_loss:
             prev_best_val_loss = np.mean(val_losses)
-            torch.save(model.state_dict(), f"./models/local/{wandb_name}_best_model.pt")
-            wandb.save(f"./models/local/{wandb_name}_best_model.pt")
+            torch.save(model.state_dict(), f"{output_dir}/{wandb_name}_best_model.pt")
+            wandb.save(f"{output_dir}/{wandb_name}_best_model.pt")
 
         # Save the latest model with optimizer and scheduler and epoch
         torch.save(
@@ -256,10 +256,10 @@ def trainer(
                 "scheduler": lr_scheduler.state_dict(),
                 "epoch": epoch,
             },
-            f"./models/local/{wandb_name}_latest_checkpoint.tar",
+            f"{output_dir}/{wandb_name}_latest_checkpoint.tar",
         )
 
-        wandb.save(f"./models/local/{wandb_name}_latest_checkpoint.tar")
+        wandb.save(f"{output_dir}/{wandb_name}_latest_checkpoint.tar")
 
         print(
             f"Epoch [{epoch+1}/{num_epochs}], Batch [{batch_idx} / {n_batches}] Loss: {np.mean(epoch_loss)} | val_losses: {np.mean(val_losses)}"
@@ -269,9 +269,9 @@ def trainer(
         )
         wandb.log(
             {
-                "mean loss": np.mean(epoch_loss),
-                "mean root traj loss": np.mean(epoch_root_trajectory_loss),
-                "val_loss": np.mean(val_losses),
-                "val root traj loss": np.mean(val_root_trajectory_losses),
+                "mean/loss": np.mean(epoch_loss),
+                "mean/root traj loss": np.mean(epoch_root_trajectory_loss),
+                "val/loss": np.mean(val_losses),
+                "val/root traj loss": np.mean(val_root_trajectory_losses),
             }
         )

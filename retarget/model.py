@@ -21,7 +21,7 @@ except ImportError:
 
 
 class PositionalEncoding(nn.Module):
-    def __init__(self, d_model, max_len=100):
+    def __init__(self, d_model):
         super(PositionalEncoding, self).__init__()
         self.gcn = GraphSAGE(3, d_model, num_layers=2)
 
@@ -134,11 +134,22 @@ class TransformerAutoEncoder(nn.Module):
         return mean + eps * std
 
     @classmethod
-    def from_pretrained(cls, artifact, checkpoint=None):
-        d_model = 64
-        d_input = 9
-        nhead = 8
-        num_layers = 4
+    def from_pretrained(cls, artifact, checkpoint=None, model_config=None):
+        default_config = {
+            "d_model": 64,
+            "d_input": 9,
+            "nhead": 8,
+            "num_layers": 4
+        }
+
+        # merge default config with model_config
+        model_config = {**default_config, **model_config}
+        
+        d_model = model_config["d_model"]
+        d_input = model_config["d_input"]
+        nhead = model_config["nhead"]
+        num_layers = model_config["num_layers"]
+            
         model = cls(
             d_input=d_input, d_model=d_model, nhead=nhead, num_layers=num_layers
         )
@@ -173,6 +184,83 @@ class TransformerAutoEncoder(nn.Module):
             return torch.load(cache_path, map_location="cpu")
         else:
             return download_wandb_artefact(path_or_artefact)
+        
+
+class Discriminator(nn.Module):
+    """
+    The discriminator is used to discriminate between real and fake data.
+    Used for training the autoencoder with Vanilla GAN adversarial loss.
+    """
+    def __init__(
+        self, d_input, d_model, nhead, num_layers, dim_feedforward=512, dropout=0
+    ):
+        super(Discriminator, self).__init__()
+        encoder_layer = nn.TransformerEncoderLayer(
+            d_model, nhead, dim_feedforward, dropout, batch_first=True
+        )
+        self.transformer_encoder = nn.TransformerEncoder(encoder_layer, num_layers)
+        self.pos_encoder = PositionalEncoding(d_model)
+        self.linear = nn.Linear(d_input, d_model)
+
+        self.cls_token = nn.Parameter(torch.randn(1, d_model))
+        self.linear_cls = nn.Linear(d_model, 1)
+        self.sigmoid = nn.Sigmoid()
+
+    def forward(self, x, t_pose, edge_index, mask=None):
+        src = self.linear(x)
+        src = src * self.pos_encoder(t_pose, edge_index)
+
+        src = graph_to_batch(src, mask)
+
+        distribution_tokens = torch.stack(
+            [
+                self.cls_token.repeat(src.shape[0], 1),
+            ],
+            dim=1,
+        )
+
+        src = torch.cat([distribution_tokens, src], dim=1)
+        mask = torch.cat(
+            [torch.ones(src.shape[0], 1, dtype=bool, device=src.device), mask], dim=1
+        )
+
+        output = self.transformer_encoder(src, src_key_padding_mask=~mask)
+
+        valid_prob = self.sigmoid(self.linear_cls(output[:, 0]))
+
+        return valid_prob
+    
+class StyleEncoder(nn.Module):
+    """
+    The style encoder is used to encode the style of the input.
+    It takes in a batch of poses that are all from the same skeleton and encodes them into a single latent vector.
+    First it encodes the poses into a latent space and then it aggregates the latent vectors into a single vector using a transformer.
+    The order of the poses is not important so positional encoding is not used.
+    A additional style token is added to the input and the output is the cls token and that is used to aggregate the poses.
+    """
+    def __init__(self, d_input, d_model, nhead, num_layers, dim_feedforward=512, dropout=0):
+        super(StyleEncoder, self).__init__()
+        self.encoder = TransformerEncoder(d_input=d_input, d_model=d_model, nhead=nhead, num_layers=num_layers)
+        self.aggregator = nn.TransformerEncoder(nn.TransformerEncoderLayer(d_model, nhead, dim_feedforward, dropout, batch_first=True), num_layers)
+        self.style_token = nn.Parameter(torch.randn(1, d_model))
+
+    def forward(self, x, t_pose, edge_index, mask=None):
+        src = self.encoder(x, t_pose, edge_index, mask=mask)
+        distribution_tokens = torch.stack(
+            [
+                self.style_token.repeat(src.shape[0], 1),
+            ],
+            dim=1,
+        )
+        
+        src = torch.cat([distribution_tokens, src], dim=1)
+        mask = torch.cat(
+            [torch.ones(src.shape[0], 1, dtype=bool, device=src.device), mask], dim=1
+        )
+
+        output = self.aggregator(src, src_key_padding_mask=~mask)
+        return output[:, 0]
+        
 
 
 def graph_to_batch(x, mask, pad_with=0):

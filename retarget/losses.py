@@ -1,11 +1,8 @@
-import numpy as np
-import torch
-from tqdm import tqdm
-from typing import Dict, Union, List
+from typing import Dict
 
-from retarget.model import graph_to_batch, mask_from_batch
-from retarget.utils.Animation import fk_for_batch
-from retarget.utils.Quaternions_old import d6_2_rotmat
+import torch
+
+from retarget.utils.Quaternions import d6_2_rotmat
 
 
 class Losses:
@@ -25,8 +22,8 @@ class Losses:
         root_trajectory: torch.Tensor = None,
         root_trajectory_pred: torch.Tensor = None,
         # log_var: torch.Tensor = None,
-        z_pose = None,
-        z_pose_augmented = None,
+        z_pose=None,
+        z_pose_augmented=None,
         mean: torch.Tensor = None,
         frame_time: torch.tensor = None,
         consec_frames: int = None,
@@ -69,7 +66,6 @@ class Losses:
         root_trajectory: torch.Tensor
             Tensor of the predicted root trajectory
             Shape: (batch_size, joints, 3)
-
 
         log_var: torch.Tensor
             Log variance, where the variance is used for the latent space vector sampling
@@ -119,13 +115,13 @@ class Losses:
             assert d6 is not None
             # assert log_var is not None
             assert frame_time is not None
-            #assert mean is not None
+            # assert mean is not None
             assert consec_frames is not None
 
             self.d6 = d6
             self.d6_pred = d6_pred
             # self.log_var = log_var
-            #self.mean = mean
+            # self.mean = mean
             self.children_mask = children_mask
             self.frame_time = frame_time
             self.consec_frames = consec_frames
@@ -136,7 +132,7 @@ class Losses:
 
             self.z_pose = z_pose
             self.z_pose_augmented = z_pose_augmented
-            
+
             self.fk_pose = self.fk_pose.reshape(
                 self.N_consecs,
                 self.consec_frames,
@@ -166,11 +162,11 @@ class Losses:
             )
 
             self.rotmat = d6_2_rotmat(
-                torch.flatten(self.d6.clone(),start_dim = 0, end_dim = -2)
+                torch.flatten(self.d6.clone(), start_dim=0, end_dim=-2)
             )
 
             self.rotmat_pred = d6_2_rotmat(
-                torch.flatten(self.d6_pred.clone(),start_dim = 0, end_dim = -2)
+                torch.flatten(self.d6_pred.clone(), start_dim=0, end_dim=-2)
             )
 
             self.mask = self.mask.reshape(
@@ -329,18 +325,20 @@ class Losses:
         torch.Tensor
         """
 
-        matrix_product = self.rotmat_pred @ torch.transpose(self.rotmat,-2,-1)
-        diag_sum = matrix_product.diagonal(dim1 = -2, dim2 = -1).sum(dim=-1)
+        matrix_product = self.rotmat_pred @ torch.transpose(self.rotmat, -2, -1)
+        diag_sum = matrix_product.diagonal(dim1=-2, dim2=-1).sum(dim=-1)
 
         # Clamp the acos input to valid range
-        acos_input = torch.clamp((diag_sum - 1) / 2, min = -1 + 1e-7, max = 1 - 1e-7)
+        acos_input = torch.clamp((diag_sum - 1) / 2, min=-1 + 1e-7, max=1 - 1e-7)
 
-        geodesic_loss = (torch.acos(acos_input) * torch.flatten(self.mask)).sum() / self.mask.sum()
+        geodesic_loss = (
+            torch.acos(acos_input) * torch.flatten(self.mask)
+        ).sum() / self.mask.sum()
 
         return geodesic_loss
 
     def z_pose_loss(
-            self,
+        self,
     ) -> None:
         """
         Calculate Pose latent space loss
@@ -356,12 +354,10 @@ class Losses:
         torch.Tensor
         """
 
-        z_pose_loss = torch.norm(
-            self.z_pose - self.z_pose_augmented, dim=-1
-        ).mean()
+        z_pose_loss = torch.norm(self.z_pose - self.z_pose_augmented, dim=-1).mean()
 
         return z_pose_loss
-    
+
     def root_trajectory_loss(
         self,
     ) -> None:

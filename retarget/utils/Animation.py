@@ -1,11 +1,10 @@
 import operator
 
 import numpy as np
-import copy
 
 import retarget.utils.AnimationStructure as AnimationStructure
 from retarget.model import graph_to_batch, mask_from_batch
-from retarget.utils.Quaternions_old import Quaternions, d6_2_rotmat
+from retarget.utils.Quaternions import Quaternions, d6_2_rotmat
 
 
 class Animation:
@@ -43,7 +42,7 @@ class Animation:
         )
 
         self.edges = AnimationStructure.edges(self.parents)
-        self.t_pose = AnimationStructure.t_pose(self.offsets, self.edges)
+        self.rest_pose = AnimationStructure.rest_pose(self.offsets, self.edges)
 
     def __op__(self, op, other):
         return Animation(
@@ -169,7 +168,7 @@ class Animation:
         )
 
     @classmethod
-    def unravel(clas, anim, shape, parents):
+    def unravel(cls, anim, shape, parents):
         nf, nj = shape
         rotations = anim[nf * nj * 0 : nf * nj * 3]
         positions = anim[nf * nj * 3 : nf * nj * 6]
@@ -209,7 +208,8 @@ class Animation:
 
         """
         from torch_geometric.data import Data
-        from retarget.utils.Quaternions_old import quat_2_d6
+
+        from retarget.utils.Quaternions import quat_2_d6
 
         data = []
 
@@ -239,7 +239,7 @@ class Animation:
             rotation = torch.Tensor(rotation)
             d6 = torch.Tensor(d6)
 
-            t_pose = torch.Tensor(self.t_pose)
+            rest_pose = torch.Tensor(self.rest_pose)
             offsets = torch.Tensor(self.offsets)
             parents = torch.LongTensor(self.parents)
             edges = torch.LongTensor(self.edges.T)
@@ -257,7 +257,7 @@ class Animation:
                     d6=d6,
                     root_trajectory=root_trajectory,
                     rotation_prev=rotation_prev,
-                    pos=t_pose,
+                    pos=rest_pose,
                     offsets=offsets,
                     parents=parents,
                 )

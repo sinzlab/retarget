@@ -10,47 +10,100 @@ except ImportError:
     subprocess.check_call([sys.executable, "-m", "pip", "install", "wandb"])
     import wandb
 
+from typing import Any, Dict, List, Optional, Tuple, Union
+
 import numpy as np
 import torch
+import torch_geometric
+from torch_geometric.data import Data
 from tqdm import tqdm
 
 from retarget.losses import Losses
 from retarget.model import graph_to_batch, mask_from_batch
 from retarget.utils.Animation import fk_for_batch
-from retarget.utils.Quaternions_old import d6_2_rotmat
 from retarget.utils.scheduler import CosineAnnealingWarmupRestarts
-import torch_geometric
 
-def loaded_graphs_to_batch(batch, mode = "train"):
-    graph_list = []
+
+def loaded_graphs_to_batch(
+    batch: List, mode: str = "train"
+) -> Union[Tuple[List[Data], List[Data], List[Data]], List[Data]]:
+    """
+    Convert loaded graph data into batches for processing.
+
+    Parameters
+    ----------
+    batch : list
+        List of graph data from dataloader
+    mode : str, default="train"
+        Mode of operation, either "train" or "test"
+
+    Returns
+    -------
+    tuple or list
+        If mode is "train", returns (encoder_graphs, decoder_graphs, encoder_graphs_translated)
+        If mode is "test", returns encoder_graphs
+    """
+    encoder_graphs: List[Data] = []
 
     if mode == "train":
-        graph_list_augment = []
-    
-        for graphs, graphs_augmented in batch:
-            graph_list += graphs
-            graph_list_augment += graphs_augmented
+        decoder_graphs: List[Data] = []
+        encoder_graphs_translated: List[Data] = []
 
-        return graph_list, graph_list_augment
+        for encoder_graph, decoder_graph, encoder_graph_translated in batch:
+            encoder_graphs += encoder_graph
+            decoder_graphs += decoder_graph
+            encoder_graphs_translated += encoder_graph_translated
+
+        return encoder_graphs, decoder_graphs, encoder_graphs_translated
+
     else:
         for graphs in batch:
-            graph_list += graphs
+            encoder_graphs += graphs
 
-        return graph_list
+        return encoder_graphs
+
 
 def trainer(
-    model,
-    dataloader,
-    test_dataloader,
-    device="cuda",
-    num_epochs=500,
-    resume_from_epoch=None,
-    resume_checkpoint=None,
-    config=None,
-    output_dir=None,
-):
+    model: torch.nn.Module,
+    dataloader: torch.utils.data.DataLoader,
+    test_dataloader: torch.utils.data.DataLoader,
+    device: str = "cuda",
+    num_epochs: int = 500,
+    resume_from_epoch: Optional[int] = None,
+    resume_checkpoint: Optional[Dict[str, Any]] = None,
+    config: Optional[Dict[str, Any]] = None,
+    output_dir: Optional[str] = None,
+) -> None:
+    """
+    Train the model with the given dataloaders.
 
-    wandb_name = wandb.run.name
+    Parameters
+    ----------
+    model : nn.Module
+        The model to train
+    dataloader : DataLoader
+        DataLoader for training data
+    test_dataloader : DataLoader
+        DataLoader for validation data
+    device : str, default="cuda"
+        Device to run training on
+    num_epochs : int, default=500
+        Number of epochs to train for
+    resume_from_epoch : int, optional
+        Epoch to resume training from
+    resume_checkpoint : dict, optional
+        Checkpoint to resume training from
+    config : dict, optional
+        Configuration dictionary containing loss weights and other parameters
+    output_dir : str, optional
+        Directory to save model checkpoints
+
+    Returns
+    -------
+    None
+        Model checkpoints are saved to output_dir
+    """
+    wandb_name: str = wandb.run.name
 
     model = model.to(device)
 
@@ -59,10 +112,10 @@ def trainer(
     if resume_checkpoint:
         optimizer.load_state_dict(resume_checkpoint["optimizer"])
 
-    fps = 1 / 30
-    losses = []
-    root_trajectory_losses = []
-    prev_best_val_loss = 1e6
+    fps: float = 1 / 30
+    losses: List[float] = []
+    root_trajectory_losses: List[float] = []
+    prev_best_val_loss: float = 1e6
 
     lr_scheduler = CosineAnnealingWarmupRestarts(
         optimizer,
@@ -79,34 +132,44 @@ def trainer(
         lr_scheduler.load_state_dict(resume_checkpoint["scheduler"])
 
     for epoch in range(resume_from_epoch, num_epochs):
-        n_batches = len(dataloader)
-        batch_idx = 0
-        epoch_loss = []
-        epoch_root_trajectory_loss = []
+        n_batches: int = len(dataloader)
+        batch_idx: int = 0
+        epoch_loss: List[float] = []
+        epoch_root_trajectory_loss: List[float] = []
         pbar = tqdm(dataloader)
-        # lr_scheduler = get_cosine_schedule_with_warmup(optimizer, num_warmup_steps=200, num_training_steps=len(dataloader))
-        # lr_scheduler = get_cosine_with_hard_restarts_schedule_with_warmup(optimizer, num_warmup_steps=200, num_training_steps=len(dataloader) * num_epochs, num_cycles=num_epochs)
+
         for batch in pbar:
             ### PREPARE DATA
 
             batch_idx += 1
 
-            batch, batch_augmented = loaded_graphs_to_batch(batch, mode = "train")
+            batch_encoder, batch_decoder, batch_encoder_translated = (
+                loaded_graphs_to_batch(batch, mode="train")
+            )
+            batch_encoder, batch_decoder, batch_encoder_translated = (
+                loaded_graphs_to_batch(batch, mode="train")
+            )
 
-            batch = torch_geometric.data.Batch.from_data_list(batch)
-            batch_augmented = torch_geometric.data.Batch.from_data_list(batch_augmented)
-            
-            batch = batch.to(device)
-            batch_augmented = batch_augmented.to(device)
+            batch_encoder = torch_geometric.data.Batch.from_data_list(batch_encoder)
+            batch_decoder = torch_geometric.data.Batch.from_data_list(batch_decoder)
+            batch_encoder_translated = torch_geometric.data.Batch.from_data_list(
+                batch_encoder_translated
+            )
+
+            batch_encoder = batch_encoder.to(device)
+            batch_decoder = batch_decoder.to(device)
+            batch_encoder_translated = batch_encoder_translated.to(device)
 
             # frame_time = frame_time[:, None, None].to(device)
             fps = 1 / 30
 
             # Create mask, position and d6 for original frame
-            mask = mask_from_batch(batch)
-            position = graph_to_batch(batch.position, mask)
-            d6 = graph_to_batch(batch.d6, mask)
-            root_trajectory = graph_to_batch(batch.root_trajectory, mask)
+            mask: torch.Tensor = mask_from_batch(batch_decoder)
+            position: torch.Tensor = graph_to_batch(batch_decoder.position, mask)
+            d6: torch.Tensor = graph_to_batch(batch_decoder.d6, mask)
+            root_trajectory: torch.Tensor = graph_to_batch(
+                batch_decoder.root_trajectory, mask
+            )
 
             # Set optimiser grad to zero
             optimizer.zero_grad()
@@ -114,18 +177,35 @@ def trainer(
             ### FORWARD PASS
 
             # Create prediction for original frame
-            d6_pred, root_traj_pred, z_pose, z_root_traj = model(batch.x, batch.pos, batch.edge_index, mask=mask)
-            d6_pred_augmented, root_traj_pred_augmented, z_pose_augmented, z_root_traj_augmented = model(batch_augmented.x, batch_augmented.pos, batch_augmented.edge_index, mask=mask)
+            d6_pred, root_traj_pred, z_pose, z_root_traj = model(
+                batch_encoder.x,
+                batch_encoder.pos,
+                batch_encoder.edge_index,
+                batch_decoder.pos,
+                mask=mask,
+            )
+            (
+                d6_pred_augmented,
+                root_traj_pred_augmented,
+                z_pose_augmented,
+                z_root_traj_augmented,
+            ) = model(
+                batch_encoder_translated.x,
+                batch_encoder_translated.pos,
+                batch_encoder_translated.edge_index,
+                mask=mask,
+            )
+            ### POST PROCESSING
 
             ### POST PROCESSING
 
             fk_pose, edge_indexs = fk_for_batch(
-                batch, d6_pred, quater=False, rotations_fmt="d6", device=device
+                batch_decoder, d6_pred, quater=False, rotations_fmt="d6", device=device
             )
             fk_pose = fk_pose - fk_pose[..., 0:1, :]
 
             # create a boolean mask for the children of the root (idx 0)
-            children_mask = torch.zeros(
+            children_mask: torch.Tensor = torch.zeros(
                 fk_pose.shape[0], fk_pose.shape[1], device=device
             )
             item, idx = torch.where(edge_indexs[:, :, 0] == 0)
@@ -134,7 +214,7 @@ def trainer(
             ### COMPUTE LOSSES
 
             # compute losses
-            train_losses = Losses(
+            train_losses: Dict[str, torch.Tensor] = Losses(
                 fk_pose=fk_pose,
                 position=position,
                 mask=mask,
@@ -151,12 +231,13 @@ def trainer(
                 consec_frames=8,
             ).losses
 
-
             # use the weights defined in the config to compute the loss
-            loss = sum([
-                config["loss_weights"][key] * train_losses[key]
-                for key in config["loss_weights"]
-            ])
+            loss: torch.Tensor = sum(
+                [
+                    config["loss_weights"][key] * train_losses[key]
+                    for key in config["loss_weights"]
+                ]
+            )
 
             loss = loss.mean()
 
@@ -189,7 +270,8 @@ def trainer(
                     "train/geodesic loss": train_losses["geodesic_loss"].item(),
                     "train/velocity loss": 170 * train_losses["vel_loss"].item() / fps,
                     "train/jerk loss": 170 * train_losses["acc_loss"].item() * fps,
-                    "train/root traj loss": 170 * train_losses["root_trajectory_loss"].item(),
+                    "train/root traj loss": 170
+                    * train_losses["root_trajectory_loss"].item(),
                     "train/z pose loss": train_losses["z_pose_loss"].item(),
                 }
             )
@@ -198,8 +280,8 @@ def trainer(
 
         # evaluate
         with torch.no_grad():
-            val_losses = []
-            val_root_trajectory_losses = []
+            val_losses: List[float] = []
+            val_root_trajectory_losses: List[float] = []
             for batch in test_dataloader:
 
                 batch = loaded_graphs_to_batch(batch, mode="test")
@@ -210,7 +292,9 @@ def trainer(
                 position = graph_to_batch(batch.position, mask).to(device)
                 root_trajectory = graph_to_batch(batch.root_trajectory, mask).to(device)
 
-                d6_pred, root_traj_pred, z_pose, z_root_traj = model(batch.x, batch.pos, batch.edge_index, mask=mask)
+                d6_pred, root_traj_pred, z_pose, z_root_traj = model(
+                    batch.x, batch.pos, batch.edge_index, mask=mask
+                )
 
                 fk_pose, edge_indexs = fk_for_batch(
                     batch,
@@ -219,11 +303,11 @@ def trainer(
                     rotations_fmt="d6",
                     device=device,
                 )
-                
+
                 fk_pose = fk_pose - fk_pose[..., 0:1, :]
 
                 # compute losses
-                val_loss = Losses(
+                val_loss: Dict[str, torch.Tensor] = Losses(
                     fk_pose=fk_pose,
                     position=position,
                     root_trajectory=root_trajectory,

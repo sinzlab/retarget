@@ -1,33 +1,56 @@
 from pathlib import Path
-
-import numpy as np
-import torch
+from typing import Dict, List, Optional, Tuple, Union
+import re
 from torch_geometric.data import Data, Dataset
 
-import retarget.utils.AnimationStructure as AnimationStructure
-from retarget.utils.Animation import forward_rotations
+from retarget.augment import Augmentions, RestPoseAugmentor, GlobalSkeletonAugmentor, XZTranslationAugmentor
+from retarget.utils.Animation import Animation
 from retarget.utils.BVH import load
-from retarget.utils.Quaternions_old import Quaternions, quat_2_d6
 
 
-class MixamoDataset(Dataset):
-    def __init__(self, directory, mode="train", ground_feet=False, cons_q=8):
+class SkIPDataset(Dataset):
+    """
+    Dataset class for loading and processing animations.
+
+    This dataset loads BVH animation files from a directory structure organized by character,
+    converts them to graph representations, and provides methods to access and augment the data.
+    """
+
+    def __init__(
+        self,
+        directory: str,
+        mode: str = "train",
+        ground_feet: bool = False,
+        cons_q: int = 8,
+        augmentors: List[str] = [RestPoseAugmentor(), GlobalSkeletonAugmentor(), XZTranslationAugmentor()],
+    ) -> None:
+        """
+        Initialize the dataset.
+
+        Parameters
+        ----------
+        directory : str
+            Path to the directory containing the animation files organized by character
+        mode : str, default="train"
+            Dataset mode, either "train" or "test"
+        ground_feet : bool, default=False
+            Whether to ground the feet of the character
+        cons_q : int, default=8
+            Number of consecutive frames to return as a batch
+        """
         super().__init__()
 
-        animations = {}
-        frame_times = {}
+        animations: Dict[str, Dict[str, Animation]] = {}
+        frame_times: Dict[str, Dict[str, float]] = {}
 
         self.cons_q = cons_q
 
+        augmentor_name = lambda augmentor: re.sub(r'(?<!^)(?=[A-Z])', '_', augmentor.__class__.__name__).lower()
+        self.augmentor = Augmentions(**{
+            augmentor_name(augmentor): augmentor for augmentor in augmentors
+        })
+
         characters = list(Path(directory).glob("*"))
-
-        # exclude_characters = ['Remy', 'Amy', 'Mannequin', ]
-
-        # include_characters = ['Aj', 'Amy', 'BigVegas', 'Ely By K.Atienza', 'Exo Gray', 'Goblin_m', 'Kaya', 'Mannequin', 'Maria J J Ong', 'Michelle']
-
-        # characters = [character for character in characters if character.name in exclude_characters]
-
-        # characters = [character for character in characters if character.name not in exclude_characters]
 
         self.ground_feet = ground_feet
         self.mode = mode
@@ -51,18 +74,18 @@ class MixamoDataset(Dataset):
             animations[character.name] = list(animations[character.name].values())
             frame_times[character.name] = list(frame_times[character.name].values())
 
-        self.animations = list(animations.values())
-        self.frame_times = list(frame_times.values())
+        self.animations: List[Animation] = list(animations.values())
+        self.frame_times: List[List[float]] = list(frame_times.values())
         # flatten the lists
         self.animations = [
             animation for character in self.animations for animation in character
         ]
-        self.frame_time = [
+        self.frame_time: List[float] = [
             frame_time for character in self.frame_times for frame_time in character
         ]
         # Create Empty list to fill with frames as graph
-        self.data = []
-        self.data_idx = []
+        self.data: List[Data] = []
+        self.data_idx: List[int] = []
 
         # Initialize empty list to put in the previous frames of a given frame
         # This is used for the velocity loss
@@ -95,7 +118,7 @@ class MixamoDataset(Dataset):
             # if self.mode == "train":
             #    self.time = self.time + [time] * n_graphs
 
-        print("=== Mixamo Dataset Summary ===")
+        print("=== Dataset Summary ===")
         print(
             f"Loaded {len(self.animations)} animation clips for {len(animations)} characters"
         )
@@ -106,84 +129,88 @@ class MixamoDataset(Dataset):
         print(f"Total frames: {len(self.data):,}")
         print("===============================")
 
-    def __len__(self):
+    def __len__(self) -> int:
+        """
+        Get the length of the dataset.
+
+        Returns
+        -------
+        int
+            Number of samples in the dataset
+        """
         return len(self.data) // self.cons_q
 
-    def get_one_item(self, idx, global_skel_scale=None, x_translation=None, z_translation=None):
+    def get_one_item(
+        self, idx: int
+    ) -> Union[Data, Tuple[Data, Data, Data, float]]:
+        """
+        Get a single item from the dataset.
+
+        Parameters
+        ----------
+        idx : int
+            Index of the item to retrieve
+        augmentor : Optional[Augmentor], default=None
+            Augmentor to apply to the item if in train mode
+
+        Returns
+        -------
+        Union[Data, Tuple[Data, Data, Data, float]]
+            If in train mode, returns (encoder_item, decoder_item, encoder_item_translated, frame_time)
+            Otherwise, returns the item
+        """
         item = self.data[self.data_idx[idx]].clone()
 
         if self.mode == "train":
-
             # If the mode is "train", then also define the frame time
             frame_time = 1 / 30  # self.time[idx]
 
-            scaled_offsets = item.offsets.numpy().copy() * global_skel_scale
-            scaled_offsets_prev = scaled_offsets.copy()
-
-            # For original frame
-            parents = item.parents.numpy()
-            rotation = item.rotation.numpy()
-            rotation_prev = item.rotation_prev.numpy()
-            edges = item.edge_index.numpy().T
-
-            position = forward_rotations(
-                parents, scaled_offsets, Quaternions(rotation[None, ...])
-            )[0]
-
-            position_prev = forward_rotations(
-                parents, scaled_offsets_prev, Quaternions(rotation_prev[None, ...])
-            )[0]
-
-            t_pose = AnimationStructure.t_pose(scaled_offsets, edges)
-
-            item.root_trajectory *= global_skel_scale
-            item.position = torch.Tensor(position)
-            item.x[:, 6:9] = torch.Tensor(position).clone()
-            item.offsets = torch.Tensor(scaled_offsets)
-            item.pos = torch.Tensor(t_pose)
-
-            # Set the scaled skeletons new velocity and previous frame
-            item.x[:, 9:12] = torch.Tensor(position_prev).clone()
-            item.x[:, 12:15] = torch.Tensor(position - position_prev).clone()
-            item.x[:, 15:] *= global_skel_scale
-
-            #Augment root trajectory
-            item_aug = item.clone()
-            item_aug.root_trajectory[:,0] += x_translation
-            item_aug.root_trajectory[:,2] += z_translation
-            item_aug.x[:,15] += x_translation
-            item_aug.x[:,17] += z_translation
-
-            return item, item_aug, frame_time
+            encoder_item, decoder_item, encoder_item_translated = self.augmentor(item)
+            return encoder_item, decoder_item, encoder_item_translated, frame_time
         return item
 
-    def __getitem__(self, idx):
+    def __getitem__(
+        self, idx: int
+    ) -> Union[List[Data], Tuple[List[Data], List[Data], List[Data]]]:
+        """
+        Get a batch of consecutive items from the dataset.
 
-        item = []
-        item_aug = []
+        Parameters
+        ----------
+        idx : int
+            Index of the batch to retrieve
 
+        Returns
+        -------
+        Union[List[Data], Tuple[List[Data], List[Data], List[Data]]]
+            If in train mode, returns (encoder_items, decoder_items, encoder_items_translated)
+            Otherwise, returns encoder_items
+        """
+        encoder_items: List[Data] = []
         if self.mode == "train":
-            frame_time = []
+            frame_time: List[float] = []
+            decoder_items: List[Data] = []
+            encoder_items_translated: List[Data] = []
 
-            if np.random.rand() < 0.25:
-                global_skel_scale = np.random.uniform(0.5, 1.5)
-            else:
-                global_skel_scale = 1.0
-
-            x_translation = torch.rand(1) * 10
-            z_translation = torch.rand(1) * 10
+            self.augmentor.reset()
 
             for i in range(self.cons_q):
-            
-                it,it_augmented, f_time = self.get_one_item(idx * self.cons_q + i, global_skel_scale, x_translation, z_translation)
-                item.append(it)
-                item_aug.append(it_augmented)
+                encoder_item, decoder_item, encoder_item_translated, f_time = (
+                    self.get_one_item(idx * self.cons_q + i)
+                )
+                encoder_items.append(encoder_item)
+                decoder_items.append(decoder_item)
+                encoder_items_translated.append(encoder_item_translated)
                 frame_time.append(f_time)
 
-            return item, item_aug  # , frame_time
+            return (
+                encoder_items,
+                decoder_items,
+                encoder_items_translated,
+            )  # , frame_time
 
         for i in range(self.cons_q):
             it = self.get_one_item(idx * self.cons_q + i)
-            item.append(it)
+            encoder_items.append(it)
 
-        return item
+        return encoder_items

@@ -6,3 +6,8 @@
 /notebooks
 /singularity.sh
 /vm-singularity
+/data
+/results
+/models
+**/__pycache__/
+/prof

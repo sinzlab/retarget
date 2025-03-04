@@ -300,7 +300,7 @@ def constraints(anim, **kwargs):
         masses = 1.0 / (0.1 + np.absolute(points_offsets[:, 1]))
         masses = masses[np.newaxis].repeat(len(anim), axis=0)
 
-    for j in xrange(anim.shape[1]):
+    for j in range(anim.shape[1]):
 
         """Add constraints between all joints and their children"""
         for c0 in children[j]:
@@ -434,8 +434,8 @@ def distances(anim):
         generated[i, j] = True
         generated[j, i] = True
 
-    for i in xrange(anim.shape[1]):
-        for j in xrange(anim.shape[1]):
+    for i in range(anim.shape[1]):
+        for j in range(anim.shape[1]):
             find_distance(distances, generated, -1, i, j)
 
     return distances
@@ -497,10 +497,23 @@ def incidence(parents):
     return inc.T
 
 
-def t_pose(offsets, edges):
-    # build the T-pose from the offsets and edge_index
-    t_pose = np.zeros_like(offsets)
+def rest_pose(offsets, edges):
+    """
+    Build the rest pose from the offsets and edge_index.
+    
+    Parameters
+    ----------
+    offsets: np.ndarray
+        Joint offsets
+    edges: np.ndarray
+        Edge indices representing skeleton connectivity
+        
+    Returns
+    -------
+    np.ndarray
+        Rest pose positions
+    """
+    rest_pose = np.zeros_like(offsets)
     for edge in edges:
-        t_pose[edge[1]] = t_pose[edge[0]] + offsets[edge[1]]
-
-    return t_pose
+        rest_pose[edge[1]] = rest_pose[edge[0]] + offsets[edge[1]]
+    return rest_pose

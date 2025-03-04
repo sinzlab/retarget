@@ -1,9 +1,4 @@
-notes: """
-    This is the main run file for the SkIP model.
-    It uses an transformer based autoencoder to encode and decode the SkIP data.
-    The model is trained using a combination of reconstruction, velocity, and jerk losses.
-    The model is trained on the SkIP dataset.
-"""
+notes: "This is the main run file for the SkIP model. It uses an transformer based autoencoder to encode and decode the SkIP data. The model is trained using a combination of reconstruction, velocity, and jerk losses.The model is trained on the SkIP dataset."
 config:
   resume: false
   resume_from_epoch: 0
@@ -25,8 +20,15 @@ config:
     root_trajectory_loss: 10
     z_pose_loss: 1
   
-  dateset:
-    name: "mixamo"
+  dataset:
+    name: "skip"
     path: "/user/kyang2/u12303/skip-dataset"
     train_dir: "train_same_cmu_cleaned"
     test_dir: "test"
+    augmentors:
+      rest_pose_augmentor:
+        max_large_angle: 20
+        max_small_angle: 180
+      global_skeleton_augmentor:
+      x_z_translation_augmentor:
+        max_translation: 10

@@ -27,8 +27,8 @@ config:
     test_dir: "test"
     augmentors:
       rest_pose_augmentor:
-        max_large_angle: 0
-        max_small_angle: 0
+        max_large_angle: 20
+        max_small_angle: 180
       global_skeleton_augmentor:
       x_z_translation_augmentor:
         max_translation: 10

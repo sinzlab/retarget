@@ -49,6 +49,14 @@ class RestPoseAugmentor(Augmentor):
         self.max_large_angle = max_large_angle
         self.max_small_angle = max_small_angle
 
+        self.seed = np.random.randint(0, 1000000)
+
+    def reset(self):
+        """
+        Reset the augmentor to new random parameters.
+        """
+        self.seed = np.random.randint(0, 1000000)
+
     def random_rotation_generator(self, offsets_shape: Tuple[int, int]) -> torch.Tensor:
         """
         Generate random rotation matrices.
@@ -63,6 +71,7 @@ class RestPoseAugmentor(Augmentor):
         torch.Tensor
             Random rotation matrices as a tensor
         """
+        np.random.seed(self.seed)
         if np.random.rand() < 0.5:
             small_euler_angles = (
                 np.random.rand(offsets_shape[0], offsets_shape[1]) * 2 - 1

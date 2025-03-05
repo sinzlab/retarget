@@ -6,27 +6,10 @@ from pydantic import BaseModel
 from torch_geometric.data import Batch
 
 from retarget.model import mask_from_batch
+from retarget.types import RestPose
 from retarget.utils.Animation import Animation, fk_for_batch
 from retarget.utils.Quaternions import Quaternions, d6_2_quat
 
-
-class RestPose(BaseModel):
-    """
-    Represents the rest pose of a skeleton.
-    
-    Attributes:
-        orients: Initial orientations of joints
-        offsets: Offset vectors between joints
-        parents: Parent indices for each joint
-        positions: 3D positions of joints in rest pose
-    """
-    orients: np.ndarray
-    offsets: np.ndarray
-    parents: np.ndarray
-    positions: torch.Tensor
-    
-    class Config:
-        arbitrary_types_allowed = True
 
 class TokenizerOutput(BaseModel):
     """

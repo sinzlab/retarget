@@ -7,8 +7,8 @@ from typing import Dict
 
 import torch
 
-from retarget.metrics import (geodesic_loss, reconstruction_loss,
-                              root_trajectory_loss)
+from retarget.losses import (geodesic_loss, reconstruction_loss,
+                             root_trajectory_loss)
 from retarget.pipeline import retarget_animation
 from retarget.utils.Animation import Animation
 from retarget.utils.BVH import load, save
@@ -83,8 +83,8 @@ def evaluate_animation(
     pred_positions = pred_positions - pred_root_trajectory
 
     angle_loss = geodesic_loss(gt_rotations, pred_rotations)
-    recn_loss = reconstruction_loss(gt_positions, pred_positions)
-    rt_loss = root_trajectory_loss(gt_root_trajectory, pred_root_trajectory)
+    recn_loss = reconstruction_loss(gt_positions * 170, pred_positions * 170)
+    rt_loss = root_trajectory_loss(gt_root_trajectory * 170, pred_root_trajectory * 170)
 
     return {
         "angle_loss": angle_loss,

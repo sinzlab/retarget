@@ -6,11 +6,26 @@ config:
     consequtive_frames: 8
     resume: false
     resume_from_epoch: 0
+
     scheduler:
       warmup_steps: 0
       cycle_mult: 1
       max_lr: 1e-3
       min_lr: 1e-5
+
+    loss_weights:
+      recn_loss: 100
+      recn_loss_root_children: 100
+      geodesic_loss: 5
+      vel_loss: 1
+      acc_loss: 0.00001
+      root_trajectory_loss: 10
+      z_pose_loss: 1
+      d6_loss: 0
+
+    validation_losses:
+      - recn_loss
+      - root_trajectory_loss
 
   model:
     encoder:
@@ -29,15 +44,6 @@ config:
       - position_prev
       - velocity
       - root_trajectory
-  
-  loss_weights:
-    recn_loss: 100
-    recn_loss_root_children: 100
-    geodesic_loss: 5
-    vel_loss: 1
-    acc_loss: 0.00001
-    root_trajectory_loss: 10
-    z_pose_loss: 1
   
   dataset:
     name: "skip"

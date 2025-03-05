@@ -18,8 +18,9 @@ import torch_geometric
 from torch_geometric.data import Data
 from tqdm import tqdm
 
-from retarget.losses import Losses
+from retarget.losses import get_training_losses
 from retarget.model import graph_to_batch, mask_from_batch
+from retarget.types import AnimationData, EncoderOutputs
 from retarget.utils.Animation import fk_for_batch
 from retarget.utils.scheduler import CosineAnnealingWarmupRestarts
 
@@ -163,15 +164,15 @@ def trainer(
             batch_decoder = batch_decoder.to(device)
             batch_encoder_translated = batch_encoder_translated.to(device)
 
-            # frame_time = frame_time[:, None, None].to(device)
-            fps = 1 / 30
-
             # Create mask, position and d6 for original frame
             mask: torch.Tensor = mask_from_batch(batch_decoder)
-            position: torch.Tensor = graph_to_batch(batch_decoder.position, mask)
-            d6: torch.Tensor = graph_to_batch(batch_decoder.d6, mask)
-            root_trajectory: torch.Tensor = graph_to_batch(
-                batch_decoder.root_trajectory, mask
+
+            gt = AnimationData(
+                position=graph_to_batch(batch_decoder.position, mask),
+                d6=graph_to_batch(batch_decoder.d6, mask),
+                root_trajectory=graph_to_batch(batch_decoder.root_trajectory, mask),
+                mask=mask,
+                fps=1 / 30
             )
 
             # Set optimiser grad to zero
@@ -200,44 +201,43 @@ def trainer(
             )
 
             ### POST PROCESSING
-
             fk_pose, edge_indexs = fk_for_batch(
                 batch_decoder, d6_pred, quater=False, rotations_fmt="d6", device=device
             )
             fk_pose = fk_pose - fk_pose[..., 0:1, :]
 
-            # create a boolean mask for the children of the root (idx 0)
-            children_mask: torch.Tensor = torch.zeros(
-                fk_pose.shape[0], fk_pose.shape[1], device=device
+            encoder_outputs = EncoderOutputs(
+                z_pose=z_pose,
+                z_root_trajectory=z_root_traj,
+                z_pose_augmented=z_pose_augmented,
+                z_root_trajectory_augmented=z_root_traj_augmented
             )
-            item, idx = torch.where(edge_indexs[:, :, 0] == 0)
-            children_mask[item, edge_indexs[item, idx, 1]] = 1
+
+            decoder_outputs = AnimationData(
+                position=fk_pose,
+                d6=d6_pred,
+                root_trajectory=root_traj_pred,
+                mask=mask,
+                edge_indexs=edge_indexs,
+                fps=1 / 30
+            )
 
             ### COMPUTE LOSSES
-
+            
             # compute losses
-            train_losses: Dict[str, torch.Tensor] = Losses(
-                fk_pose=fk_pose,
-                position=position,
-                mask=mask,
-                children_mask=children_mask,
-                d6=d6,
-                d6_pred=d6_pred,
-                root_trajectory=root_trajectory,
-                root_trajectory_pred=root_traj_pred,
-                # log_var=log_var,
-                z_pose=z_pose,
-                z_pose_augmented=z_pose_augmented,
-                frame_time=fps,
-                mode="train",
-                consec_frames=8,
-            ).losses
+            train_losses: Dict[str, torch.Tensor] = get_training_losses(
+                gt=gt,
+                encoder_outputs=encoder_outputs,
+                decoder_outputs=decoder_outputs,
+                consecutive_frames=8,
+                losses_to_compute=config["train"]["loss_weights"].keys()
+            )
 
             # use the weights defined in the config to compute the loss
             loss: torch.Tensor = sum(
                 [
-                    config["loss_weights"][key] * train_losses[key]
-                    for key in config["loss_weights"]
+                    config["train"]["loss_weights"][key] * train_losses[key]
+                    for key in config["train"]["loss_weights"]
                 ]
             )
 
@@ -268,8 +268,7 @@ def trainer(
                     "train/geodesic loss": train_losses["geodesic_loss"].item(),
                     "train/velocity loss": 170 * train_losses["vel_loss"].item() / fps,
                     "train/jerk loss": 170 * train_losses["acc_loss"].item() * fps,
-                    "train/root traj loss": 170
-                    * train_losses["root_trajectory_loss"].item(),
+                    "train/root traj loss": 170 * train_losses["root_trajectory_loss"].item(),
                     "train/z pose loss": train_losses["z_pose_loss"].item(),
                 }
             )
@@ -298,8 +297,14 @@ def trainer(
                 batch = batch.to(device)
 
                 mask = mask_from_batch(batch).to(device)
-                position = graph_to_batch(batch.position, mask).to(device)
-                root_trajectory = graph_to_batch(batch.root_trajectory, mask).to(device)
+
+                gt = AnimationData(
+                    position=graph_to_batch(batch.position, mask),
+                    d6=graph_to_batch(batch.d6, mask),
+                    root_trajectory=graph_to_batch(batch.root_trajectory, mask),
+                    mask=mask,
+                    fps=1 / 30
+                )
 
                 d6_pred, root_traj_pred, z_pose, z_root_traj = model(
                     batch.x, batch.pos, batch.edge_index, mask=mask
@@ -315,15 +320,28 @@ def trainer(
 
                 fk_pose = fk_pose - fk_pose[..., 0:1, :]
 
-                # compute losses
-                val_loss: Dict[str, torch.Tensor] = Losses(
-                    fk_pose=fk_pose,
-                    position=position,
-                    root_trajectory=root_trajectory,
-                    root_trajectory_pred=root_traj_pred,
+                encoder_outputs = EncoderOutputs(
+                    z_pose=z_pose,
+                    z_root_trajectory=z_root_traj
+                )
+
+                decoder_outputs = AnimationData(
+                    position=fk_pose,
+                    d6=d6_pred,
+                    root_trajectory=root_traj_pred,
                     mask=mask,
-                    mode="validation",
-                ).losses
+                    edge_indexs=edge_indexs,
+                    fps=1 / 30
+                )
+
+                # compute losses
+                val_loss: Dict[str, torch.Tensor] = get_training_losses(
+                    gt=gt,
+                    encoder_outputs=encoder_outputs,
+                    decoder_outputs=decoder_outputs,
+                    consecutive_frames=8,
+                    losses_to_compute=config["train"]["validation_losses"]
+                )
 
                 val_losses.append(170 * val_loss["recn_loss"].item())
                 val_root_trajectory_losses.append(

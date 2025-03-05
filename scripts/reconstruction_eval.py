@@ -8,8 +8,8 @@ from typing import Dict, List
 import torch
 from tqdm import tqdm
 
-from retarget.metrics import (geodesic_loss, reconstruction_loss,
-                              root_trajectory_loss)
+from retarget.losses import (geodesic_loss, reconstruction_loss,
+                             root_trajectory_loss)
 from retarget.model import TransformerAutoEncoder
 from retarget.pipeline import (_retarget_animation_with_model,
                                load_pretrained_model)
@@ -53,8 +53,8 @@ def calculate_animation_metrics(
 
     # Calculate various loss metrics
     angle_loss = geodesic_loss(gt_rotations, pred_rotations)
-    position_loss = reconstruction_loss(gt_positions_centered, pred_positions_centered)
-    trajectory_loss = root_trajectory_loss(gt_root_trajectory, pred_root_trajectory)
+    position_loss = reconstruction_loss(gt_positions_centered * 170, pred_positions_centered * 170)
+    trajectory_loss = root_trajectory_loss(gt_root_trajectory * 170, pred_root_trajectory * 170)
 
     return {
         "angle_loss": angle_loss.item(),

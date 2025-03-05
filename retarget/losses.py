@@ -1,211 +1,53 @@
-from typing import Dict
+from typing import Dict, List, Optional
 
 import torch
 
+from retarget.types import AnimationData, EncoderOutputs
 from retarget.utils.Quaternions import d6_2_rotmat
 
 
-class Losses:
-    """
-    Losses is an object, which combines all the necessary losses for the training
-    of SKiP.
-    """
-
-    def __init__(
-        self,
-        fk_pose: torch.Tensor,
-        position: torch.Tensor,
-        mask: torch.Tensor,
-        children_mask: torch.Tensor = None,
-        d6: torch.Tensor = None,
-        d6_pred: torch.Tensor = None,
-        root_trajectory: torch.Tensor = None,
-        root_trajectory_pred: torch.Tensor = None,
-        # log_var: torch.Tensor = None,
-        z_pose=None,
-        z_pose_augmented=None,
-        mean: torch.Tensor = None,
-        frame_time: torch.tensor = None,
-        consec_frames: int = None,
-        mode: str = "train",
-    ):
-        """
-        Initialisation of the Losses Object
-
-        Parameters
-        ----------
-
-        fk_pose: torch.Tensor
-            Reconstructed joint positions using the predicted rotations.
-            Shape: (batch_size, joints, 3)
-
-        position: torch.Tensor
-            Ground truth joint positions.
-            Shape: (batch_size, joints, 3)
-
-        mask: torch.Tensor
-           Mask, defining which joints are padded and which not
-           Shape: (batch_size, joints)
-
-        children_mask: torch.Tensor
-           Mask, defining which joints are the children of the root
-           Shape: (batch_size, joints)
-
-        d6: torch.Tensor
-            Tensor of the ground truth 6d representation for every joint
-            Shape: (batch_size, joints, 6)
-
-        d6_pred: torch.Tensor
-            Tensor of the predicted 6d representation for every joint
-            Shape: (batch_size, joints, 6)
-
-        root_trajectory: torch.Tensor
-            Tensor of the predicted root trajectory, where all joitns except for zero is masked to zero
-            Shape: (batch_size, joints, 3)
-
-        root_trajectory: torch.Tensor
-            Tensor of the predicted root trajectory
-            Shape: (batch_size, joints, 3)
-
-        log_var: torch.Tensor
-            Log variance, where the variance is used for the latent space vector sampling
-            Shape: (batch_size, N_latent, N_latent)
-            N_latent is here the length of the latent space vector
-
-        mean: torch.Tensor
-            Mean used to sample the latent space vector
-            Shape: (batch_size, N_latent)
-
-        z_pose: torch.Tensor
-            Pose token part of the latent space vector
-            Shape: (batch_size, N_latent/2)
-
-        z_pose_augmented: torch.Tensor
-            Augmented Pose token part of the latent space vector
-            Shape: (batch_size, N_latent/2)
-
-
-        frame_time: torch.Tensor
-            Time difference between two frames
-            Shape: (batch_size, 1, 1)
-
-        consec_frames: int
-            Integer, defining how many consecutive frames where loaded
-
-        mode: str
-            Mode, to define if the losses if for training or validation
-
-        Returns
-        -------
-
-        None
-        """
-
-        self.fk_pose = fk_pose
-        self.position = position
-        self.root_trajectory = root_trajectory
-        self.root_trajectory_pred = root_trajectory_pred
-        self.mask = mask
-        self.mode = mode
-
-        if self.mode == "train":
-
-            # Check that all values used for train is not None
-            assert children_mask is not None
-            assert d6 is not None
-            # assert log_var is not None
-            assert frame_time is not None
-            # assert mean is not None
-            assert consec_frames is not None
-
-            self.d6 = d6
-            self.d6_pred = d6_pred
-            # self.log_var = log_var
-            # self.mean = mean
-            self.children_mask = children_mask
-            self.frame_time = frame_time
-            self.consec_frames = consec_frames
-
-            self.batch_size = self.position.shape[0]
-            self.N_joints = self.position.shape[1]
-            self.N_consecs = self.batch_size // self.consec_frames
-
-            self.z_pose = z_pose
-            self.z_pose_augmented = z_pose_augmented
-
-            self.fk_pose = self.fk_pose.reshape(
-                self.N_consecs,
-                self.consec_frames,
-                self.N_joints,
-                3,
-            )
-
-            self.position = self.position.reshape(
-                self.N_consecs,
-                self.consec_frames,
-                self.N_joints,
-                3,
-            )
-
-            self.d6 = self.d6.reshape(
-                self.N_consecs,
-                self.consec_frames,
-                self.N_joints,
-                6,
-            )
-
-            self.d6_pred = self.d6_pred.reshape(
-                self.N_consecs,
-                self.consec_frames,
-                self.N_joints,
-                6,
-            )
-
-            self.rotmat = d6_2_rotmat(
-                torch.flatten(self.d6.clone(), start_dim=0, end_dim=-2)
-            )
-
-            self.rotmat_pred = d6_2_rotmat(
-                torch.flatten(self.d6_pred.clone(), start_dim=0, end_dim=-2)
-            )
-
-            self.mask = self.mask.reshape(
-                self.N_consecs,
-                self.consec_frames,
-                self.N_joints,
-            )
-
-            self.children_mask = self.children_mask.reshape(
-                self.N_consecs,
-                self.consec_frames,
-                self.N_joints,
-            )
-
-    def reconstruction_loss(
-        self,
-    ) -> None:
+def reconstruction_loss(
+        position_gt: torch.Tensor,
+        position_pred: torch.Tensor,
+        mask: Optional[torch.Tensor] = None
+    ) -> torch.Tensor:
         """
         Calculate reconstruction loss for all joint positions
 
         Parameters
         ----------
 
-        None
+        position_gt: torch.Tensor
+            Ground truth joint positions.
+            Shape: (batch_size, frames, joints, 3)
+
+        position_pred: torch.Tensor
+            Predicted joint positions.
+            Shape: (batch_size, frames, joints, 3)
+
+        mask: Optional[torch.Tensor] = None
+            Mask, defining which joints are padded and which not
+            Shape: (batch_size, frames, joints)
 
         Returns
         -------
 
         torch.Tensor
         """
+        if mask is None:
+            mask = torch.ones(position_gt.shape[:-1])
+
         recn_loss = (
-            torch.norm(self.position - self.fk_pose, dim=-1) * self.mask
-        ).sum() / self.mask.sum()
+            torch.norm(position_gt - position_pred, dim=-1) * mask
+        ).sum() / mask.sum()
 
         return recn_loss
 
-    def reconstruction_root_children_loss(
-        self,
-    ) -> None:
+def reconstruction_root_children_loss(
+        position_gt: torch.Tensor,
+        position_pred: torch.Tensor,
+        children_mask: torch.Tensor
+    ) -> torch.Tensor:
         """
         Calculate reconstruction loss for joint positions,
         where the joint is directly connected to the root
@@ -213,7 +55,17 @@ class Losses:
         Parameters
         ----------
 
-        None
+        position_gt: torch.Tensor
+            Ground truth joint positions.
+            Shape: (batch_size, frames, joints, 3)
+
+        position_pred: torch.Tensor
+            Predicted joint positions.
+            Shape: (batch_size, frames, joints, 3)
+
+        children_mask: torch.Tensor
+            Mask, defining which joints are the children of the root
+            Shape: (batch_size, frames, joints)
 
         Returns
         -------
@@ -221,131 +73,194 @@ class Losses:
         torch.Tensor
         """
         recn_loss_root_children = (
-            torch.norm(self.position - self.fk_pose, dim=-1) * self.children_mask
-        ).sum() / self.children_mask.sum()
+            torch.norm(position_gt - position_pred, dim=-1) * children_mask
+        ).sum() / children_mask.sum()
 
         return recn_loss_root_children
 
-    def velocity_loss(
-        self,
-    ) -> None:
+def velocity_loss(
+        position_gt: torch.Tensor,
+        position_pred: torch.Tensor,
+        mask: Optional[torch.Tensor] = None
+    ) -> torch.Tensor:
         """
         Calculate velocity loss for all joint position velocities
 
         Parameters
         ----------
 
-        None
+        position_gt: torch.Tensor
+            Ground truth joint positions.
+            Shape: (batch_size, frames, joints, 3)
+
+        position_pred: torch.Tensor
+            Predicted joint positions.
+            Shape: (batch_size, frames, joints, 3)
+
+        mask: Optional[torch.Tensor] = None
+            Mask, defining which joints are padded and which not
+            Shape: (batch_size, frames, joints)
 
         Returns
         -------
 
         torch.Tensor
         """
+        if mask is None:
+            mask = torch.ones(position_gt.shape[:-1])
 
         vel_loss = (
             torch.norm(
-                (self.position[:, 1:] - self.position[:, :-1])
-                - (self.fk_pose[:, 1:] - self.fk_pose[:, :-1]),
+                (position_gt[:, 1:] - position_gt[:, :-1])
+                - (position_pred[:, 1:] - position_pred[:, :-1]),
                 dim=-1,
             )
-            * self.mask[:, 1:]
-        ).sum() / self.mask[:, 1:].sum()
+            * mask[:, 1:]
+        ).sum() / mask[:, 1:].sum()
 
         return vel_loss
 
-    def jerk_loss(
-        self,
-    ) -> None:
+def jerk_loss(
+        position_pred: torch.Tensor,
+        mask: Optional[torch.Tensor] = None,
+        fps: float = 1 / 30
+    ) -> torch.Tensor:
         """
         Calculate jerk loss for all joint position accelaration changing rates
 
         Parameters
         ----------
 
-        None
+        position_pred: torch.Tensor
+            Predicted joint positions.
+            Shape: (batch_size, frames, joints, 3)
+
+        mask: Optional[torch.Tensor] = None
+            Mask, defining which joints are padded and which not
+            Shape: (batch_size, frames, joints)
+
+        fps: float
+            Frames per second
 
         Returns
         -------
 
         torch.Tensor
         """
+        if mask is None:
+            mask = torch.ones(position_pred.shape[:-1])
 
         acc_loss = (
             torch.norm(
-                self.fk_pose[:, 3:]
-                - 3 * self.fk_pose[:, 2:-1]
-                + 3 * self.fk_pose[:, 1:-2]
-                - self.fk_pose[:, :-3],
+                position_pred[:, 3:]
+                - 3 * position_pred[:, 2:-1]
+                + 3 * position_pred[:, 1:-2]
+                - position_pred[:, :-3],
                 dim=-1,
             )
-            / (self.frame_time**3)
-            * self.mask[:, 3:]
-        ).sum() / self.mask[:, 3:].sum()
+            / (1 / fps)**3
+            * mask[:, 3:]
+        ).sum() / mask[:, 3:].sum()
 
         return acc_loss
 
-    def d6_angle_loss(
-        self,
-    ) -> None:
+def d6_angle_loss(
+        d6_gt: torch.Tensor,
+        d6_pred: torch.Tensor,
+        mask: Optional[torch.Tensor] = None
+    ) -> torch.Tensor:
         """
         Calculate distance loss for all joint d6's
 
         Parameters
         ----------
 
-        None
+        d6_gt: torch.Tensor
+            Ground truth joint d6's.
+            Shape: (batch_size, frames, joints, 6)
+
+        d6_pred: torch.Tensor
+            Predicted joint d6's.
+            Shape: (batch_size, frames, joints, 6)
+
+        mask: Optional[torch.Tensor] = None
+            Mask, defining which joints are padded and which not
+            Shape: (batch_size, frames, joints)
 
         Returns
         -------
 
         torch.Tensor
         """
+        if mask is None:
+            mask = torch.ones(d6_gt.shape[:-1])
 
         d6_loss = (
-            torch.norm(self.d6 - self.d6_pred, dim=-1) * self.mask
-        ).sum() / self.mask.sum()
+            torch.norm(d6_gt - d6_pred, dim=-1) * mask
+        ).sum() / mask.sum()
 
         return d6_loss
 
-    def geodesic_loss(
-        self,
-    ) -> None:
+def geodesic_loss(
+        rotmat_gt: torch.Tensor,
+        rotmat_pred: torch.Tensor,
+        mask: Optional[torch.Tensor] = None
+    ) -> torch.Tensor:
         """
         Calculate geodesic loss for all joint 3x3 rotation matrices
 
         Parameters
         ----------
 
-        None
+        rotmat_gt: torch.Tensor
+            Ground truth joint rotation matrices.
+            Shape: (batch_size, frames, joints, 3, 3)
+
+        rotmat_pred: torch.Tensor
+            Predicted joint rotation matrices.
+            Shape: (batch_size, frames, joints, 3, 3)
+
+        mask: torch.Tensor
+            Mask, defining which joints are padded and which not
+            Shape: (batch_size, frames, joints)
 
         Returns
         -------
 
         torch.Tensor
         """
-        matrix_product = self.rotmat_pred @ torch.transpose(self.rotmat, -2, -1)
+        if mask is None:
+            mask = torch.ones(rotmat_gt.shape[:-2])
+
+        matrix_product = rotmat_pred @ torch.transpose(rotmat_gt, -2, -1)
         diag_sum = matrix_product.diagonal(dim1=-2, dim2=-1).sum(dim=-1)
 
         # Clamp the acos input to valid range
         acos_input = torch.clamp((diag_sum - 1) / 2, min=-1 + 1e-7, max=1 - 1e-7)
 
         geodesic_loss = (
-            torch.acos(acos_input) * torch.flatten(self.mask)
-        ).sum() / self.mask.sum()
+            torch.acos(acos_input) * mask
+        ).sum() / mask.sum()
 
         return geodesic_loss
 
-    def z_pose_loss(
-        self,
-    ) -> None:
+def z_pose_loss(
+        z_pose: torch.Tensor,
+        z_pose_augmented: torch.Tensor,
+    ) -> torch.Tensor:
         """
         Calculate Pose latent space loss
 
         Parameters
         ----------
 
-        None
+        z_pose: torch.Tensor
+            Pose token part of the latent space vector
+            Shape: (batch_size, frames, N_latent/2)
+
+        z_pose_augmented: torch.Tensor
+            Augmented Pose token part of the latent space vector
+            Shape: (batch_size, frames, N_latent/2)
 
         Returns
         -------
@@ -353,20 +268,27 @@ class Losses:
         torch.Tensor
         """
 
-        z_pose_loss = torch.norm(self.z_pose - self.z_pose_augmented, dim=-1).mean()
+        z_pose_loss = torch.norm(z_pose - z_pose_augmented, dim=-1).mean()
 
         return z_pose_loss
 
-    def root_trajectory_loss(
-        self,
-    ) -> None:
+def root_trajectory_loss(
+        root_trajectory: torch.Tensor,
+        root_trajectory_pred: torch.Tensor,
+    ) -> torch.Tensor:
         """
         Calculate root trajectory loss for only the zeroth joint
 
         Parameters
         ----------
 
-        None
+        root_trajectory: torch.Tensor
+            Ground truth root trajectory.
+            Shape: (batch_size, frames, 3)
+
+        root_trajectory_pred: torch.Tensor
+            Predicted root trajectory.
+            Shape: (batch_size, frames, 3)
 
         Returns
         -------
@@ -375,14 +297,15 @@ class Losses:
         """
 
         root_trajectory_loss = torch.norm(
-            self.root_trajectory[:, 0:1] - self.root_trajectory_pred, dim=-1
+            root_trajectory[:, 0:1] - root_trajectory_pred, dim=-1
         ).mean()
 
         return root_trajectory_loss
 
-    def kl_loss(
-        self,
-    ) -> None:
+def kl_loss(
+        log_var: torch.Tensor,
+        mean: torch.Tensor,
+    ) -> torch.Tensor:
         """
         Calculate kl-divergence loss for variational autoencoders
 
@@ -398,23 +321,38 @@ class Losses:
         """
 
         kl_loss = -0.5 * torch.sum(
-            1 + self.log_var - self.mean.pow(2) - self.log_var.exp()
+            1 + log_var - mean.pow(2) - log_var.exp()
         )
 
         return kl_loss
 
-    @property
-    def losses(
-        self,
+def get_training_losses(
+        gt: AnimationData,
+        encoder_outputs: EncoderOutputs,
+        decoder_outputs: AnimationData,
+        consecutive_frames: int,
+        losses_to_compute: List[str]
     ) -> Dict[str, torch.Tensor]:
         """
-        Calculate the losses used for the training/validation
-        Return the losses as a dictionary
+        Calculate the losses used for the training
 
         Parameters
         ----------
 
-        None
+        gt: AnimationData
+            Ground truth data
+
+        encoder_outputs: EncoderOutputs
+            Encoder outputs
+
+        decoder_outputs: AnimationData
+            Decoder outputs
+
+        consecutive_frames: int
+            Integer, defining how many consecutive frames where loaded
+
+        losses_to_compute: List[str]
+            List of losses to compute
 
         Returns
         -------
@@ -422,20 +360,47 @@ class Losses:
         Dict[str, torch.Tensor]
         """
 
-        if self.mode == "train":
-            return {
-                "recn_loss": self.reconstruction_loss(),
-                "vel_loss": self.velocity_loss(),
-                "acc_loss": self.jerk_loss(),
-                "recn_loss_root_children": self.reconstruction_root_children_loss(),
-                "d6_loss": self.d6_angle_loss(),
-                "root_trajectory_loss": self.root_trajectory_loss(),
-                "geodesic_loss": self.geodesic_loss(),
-                "z_pose_loss": self.z_pose_loss(),
-                # "kl_loss": kl_loss,
-            }
+        batch_size = gt.position.shape[0]
+        num_joints = gt.position.shape[1]
+        num_sequences = batch_size // consecutive_frames
 
-        return {
-            "recn_loss": self.reconstruction_loss(),
-            "root_trajectory_loss": self.root_trajectory_loss(),
+        decoder_outputs.prepare(num_sequences, consecutive_frames, num_joints)
+        gt.prepare(num_sequences, consecutive_frames, num_joints)
+
+        # Define loss functions and their required inputs
+        loss_functions = {
+            "recn_loss": lambda: reconstruction_loss(
+                gt.position, decoder_outputs.position, decoder_outputs.mask
+            ),
+            "vel_loss": lambda: velocity_loss(
+                gt.position, decoder_outputs.position, decoder_outputs.mask
+            ),
+            "acc_loss": lambda: jerk_loss(
+                decoder_outputs.position, decoder_outputs.mask, decoder_outputs.fps
+            ),
+            "recn_loss_root_children": lambda: reconstruction_root_children_loss(
+                gt.position, decoder_outputs.position, decoder_outputs.children_mask
+            ),
+            "d6_loss": lambda: d6_angle_loss(
+                gt.d6, decoder_outputs.d6, decoder_outputs.mask
+            ),
+            "root_trajectory_loss": lambda: root_trajectory_loss(
+                gt.root_trajectory, decoder_outputs.root_trajectory
+            ),
+            "geodesic_loss": lambda: geodesic_loss(
+                gt.rotmat, decoder_outputs.rotmat, decoder_outputs.mask
+            ),
+            "z_pose_loss": lambda: z_pose_loss(
+                encoder_outputs.z_pose, encoder_outputs.z_pose_augmented
+            ),
         }
+
+        # Calculate only the losses that are in the loss_weights dictionary
+        losses = {
+            loss_name: loss_fn()
+            for loss_name, loss_fn in loss_functions.items()
+            if loss_name in losses_to_compute
+        }
+
+        return losses
+        

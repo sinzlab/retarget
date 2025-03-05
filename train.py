@@ -24,11 +24,11 @@ except ImportError:
 import torch
 from torch.utils.data import DataLoader
 
+from retarget.augment import get_augmentors
 from retarget.dataset import SkIPDataset
 from retarget.model import TransformerAutoEncoder
 from retarget.trainer import trainer
 from retarget.utils.config import load_config
-from retarget.augment import get_augmentors
 
 
 def collate_fn(data: List[Any]) -> List[Any]:
@@ -166,7 +166,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--device",
         type=str,
-        default="cuda",
+        default="cpu",
         help="Device, to train/test the model",
     )
     parser.add_argument(

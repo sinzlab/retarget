@@ -1,4 +1,4 @@
-from typing import List, Tuple, Optional, Dict, Any
+from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
 import torch
@@ -7,7 +7,8 @@ from torch_geometric.data import Data
 
 import retarget.utils.AnimationStructure as AnimationStructure
 from retarget.utils.Animation import forward_rotations
-from retarget.utils.Quaternions import Quaternions, d6_2_quat, quat_2_d6, d6_2_rotmat, rotmat_2_d6
+from retarget.utils.Quaternions import Quaternions, d6_2_rotmat, rotmat_2_d6
+
 
 class Augmentor:
     """

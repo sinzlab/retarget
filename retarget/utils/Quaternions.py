@@ -2,7 +2,6 @@ import numpy as np
 import torch
 
 
-
 class Quaternions:
     """
     Quaternions is a wrapper around a numpy ndarray

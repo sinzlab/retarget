@@ -1,9 +1,11 @@
-from pathlib import Path
-from typing import Dict, List, Optional, Tuple, Union
 import re
+from pathlib import Path
+from typing import Dict, List, Tuple, Union
+
 from torch_geometric.data import Data, Dataset
 
-from retarget.augment import Augmentions, RestPoseAugmentor, GlobalSkeletonAugmentor, XZTranslationAugmentor
+from retarget.augment import (Augmentions, GlobalSkeletonAugmentor,
+                              RestPoseAugmentor, XZTranslationAugmentor)
 from retarget.utils.Animation import Animation
 from retarget.utils.BVH import load
 

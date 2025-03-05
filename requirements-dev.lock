@@ -54,6 +54,7 @@ idna==3.10
     # via yarl
 iniconfig==2.0.0
     # via pytest
+isort==6.0.1
 jinja2==3.1.5
     # via torch
     # via torch-geometric

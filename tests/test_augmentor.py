@@ -1,12 +1,13 @@
-import pytest
 import time
 
+import pytest
 import torch
 
-from retarget.dataset import SkIPDataset
 from retarget.augment import RestPoseAugmentor
+from retarget.dataset import SkIPDataset
 from retarget.utils.Animation import forward_rotations
 from retarget.utils.Quaternions import Quaternions, d6_2_quat, rotmat_2_d6
+
 
 def test_dataset_loading_performance():
     """

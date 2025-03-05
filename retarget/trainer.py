@@ -195,7 +195,6 @@ def trainer(
                 batch_encoder_translated.edge_index,
                 mask=mask,
             )
-            ### POST PROCESSING
 
             ### POST PROCESSING
 
@@ -259,10 +258,6 @@ def trainer(
             epoch_loss.append(losses[-1])
             epoch_root_trajectory_loss.append(root_trajectory_losses[-1])
 
-            pbar.set_description(
-                f"Epoch [{epoch+1}/{num_epochs}], Loss: {np.mean(epoch_loss[-10:])}"
-            )
-
             wandb.log(
                 {
                     "train/loss": 170 * train_losses["recn_loss"].item(),
@@ -274,6 +269,17 @@ def trainer(
                     * train_losses["root_trajectory_loss"].item(),
                     "train/z pose loss": train_losses["z_pose_loss"].item(),
                 }
+            )
+
+            pbar.set_description(
+                f"Epoch [{epoch+1}/{num_epochs}], Loss: {np.mean(epoch_loss[-10:]):.2f}"
+            )
+
+            pbar.set_postfix(
+                recn_loss=train_losses["recn_loss"].item() * 170,
+                root_traj_loss=train_losses["root_trajectory_loss"].item() * 170,
+                angle_loss=train_losses["d6_loss"].item(),
+                geodesic_loss=train_losses["geodesic_loss"].item(),
             )
 
             lr_scheduler.step()

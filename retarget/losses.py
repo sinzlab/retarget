@@ -324,7 +324,6 @@ class Losses:
 
         torch.Tensor
         """
-
         matrix_product = self.rotmat_pred @ torch.transpose(self.rotmat, -2, -1)
         diag_sum = matrix_product.diagonal(dim1=-2, dim2=-1).sum(dim=-1)
 

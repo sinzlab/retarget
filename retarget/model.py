@@ -1,5 +1,6 @@
+
 import os
-from typing import Any, Dict, Optional, Tuple, Union
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 import torch
 import torch.nn as nn
@@ -88,6 +89,9 @@ class TransformerEncoder(nn.Module):
         num_layers: Number of transformer layers
         dim_feedforward: Dimension of feedforward network
         dropout: Dropout probability
+        positional_encoding_type: Type of positional encoding to use
+            - "mul": Multiplicative positional encoding
+            - "add": Additive positional encoding
         """
         super(TransformerEncoder, self).__init__()
         encoder_layer = nn.TransformerEncoderLayer(
@@ -123,6 +127,7 @@ class TransformerEncoder(nn.Module):
                 - root trajectory latent representation [batch_size, d_model]
         """
         src = self.linear(x)
+
         src = src * self.pos_encoder(rest_pose, edge_index)
 
         src = graph_to_batch(src, mask)
@@ -217,8 +222,10 @@ class TransformerEncoderDecoder(nn.Module):
 
         pe = self.pos_encoder(rest_pose, edge_index)
         pe = graph_to_batch(pe, mask)
+
         src = src_pose * pe  # multiply by positional encoding
-        src_root_traj = src_root_traj + self.src_root_traj_pos_enc
+        src_root_traj = src_root_traj * self.src_root_traj_pos_enc
+        
         src = torch.cat([src, src_root_traj], dim=1)
         mask = torch.cat(
             [mask, torch.ones(src.shape[0], 1, dtype=bool, device=src.device)], dim=1
@@ -244,32 +251,50 @@ class TransformerAutoEncoder(nn.Module):
 
     def __init__(
         self,
-        d_input: int,
-        d_model: int,
-        nhead: int,
-        num_layers: int,
+        encoder_d_input: int,
+        encoder_d_model: int,
+        encoder_nhead: int,
+        encoder_num_layers: int,
+        decoder_d_input: int,
+        decoder_d_model: int,
+        decoder_nhead: int,
+        decoder_num_layers: int,
         dim_feedforward: int = 512,
         dropout: float = 0,
+        feature_list: List[str] = None,
     ):
         """
         Initialize the transformer autoencoder.
 
         Parameters
         ----------
-        d_input: Dimension of input features
-        d_model: Dimension of the model
-        nhead: Number of attention heads
-        num_layers: Number of transformer layers
+        encoder_d_input: Dimension of input features
+        encoder_d_model: Dimension of the model
+        encoder_nhead: Number of attention heads
+        encoder_num_layers: Number of transformer layers
+        decoder_d_input: Dimension of input features
+        decoder_d_model: Dimension of the model
+        decoder_nhead: Number of attention heads
+        decoder_num_layers: Number of transformer layers
         dim_feedforward: Dimension of feedforward network
         dropout: Dropout probability
+        feature_list: List of features to include in the graph
         """
         super(TransformerAutoEncoder, self).__init__()
+        self.feature_list = feature_list
+
         self.encoder = TransformerEncoder(
-            d_input=d_input + 9, d_model=d_model, nhead=nhead, num_layers=num_layers
+            d_input=encoder_d_input,
+            d_model=encoder_d_model,
+            nhead=encoder_nhead,
+            num_layers=encoder_num_layers,
         )
 
         self.decoder = TransformerEncoderDecoder(
-            d_output=d_input - 3, d_model=d_model, nhead=nhead, num_layers=num_layers
+            d_output=decoder_d_input,
+            d_model=decoder_d_model,
+            nhead=decoder_nhead,
+            num_layers=decoder_num_layers,
         )
 
     def forward(
@@ -327,6 +352,44 @@ class TransformerAutoEncoder(nn.Module):
         std = torch.exp(0.5 * log_var)
         eps = torch.randn_like(std)
         return mean + eps * std
+    
+    @classmethod
+    def build_from_config(
+        cls,
+        model_config: Optional[Dict[str, Any]] = None,
+    ) -> "TransformerAutoEncoder":
+        """
+        Build a model from a configuration dictionary.
+
+        Parameters
+        ----------
+        model_config: Configuration dictionary
+
+        Returns:
+            Initialized model
+        """
+        default_config = {
+            "encoder": {"d_model": 64, "d_input": 18, "nhead": 8, "num_layers": 4},
+            "decoder": {"d_model": 64, "d_input": 6, "nhead": 8, "num_layers": 4},
+            "feature_list": ["d6", "position", "position_prev", "velocity", "root_trajectory"],
+        }
+
+        # merge default config with model_config
+        model_config = {**default_config, **(model_config or {})}
+
+        model_kwargs = {
+            "encoder_d_model": model_config["encoder"]["d_model"],
+            "encoder_d_input": model_config["encoder"]["d_input"],
+            "encoder_nhead": model_config["encoder"]["nhead"],
+            "encoder_num_layers": model_config["encoder"]["num_layers"],
+            "decoder_d_model": model_config["decoder"]["d_model"],
+            "decoder_d_input": model_config["decoder"]["d_input"],
+            "decoder_nhead": model_config["decoder"]["nhead"],
+            "decoder_num_layers": model_config["decoder"]["num_layers"],
+            "feature_list": model_config["feature_list"],
+        }
+
+        return cls(**model_kwargs)
 
     @classmethod
     def from_pretrained(
@@ -347,19 +410,7 @@ class TransformerAutoEncoder(nn.Module):
         Returns:
             Initialized model with pretrained weights
         """
-        default_config = {"d_model": 64, "d_input": 9, "nhead": 8, "num_layers": 4}
-
-        # merge default config with model_config
-        model_config = {**default_config, **(model_config or {})}
-
-        d_model = model_config["d_model"]
-        d_input = model_config["d_input"]
-        nhead = model_config["nhead"]
-        num_layers = model_config["num_layers"]
-
-        model = cls(
-            d_input=d_input, d_model=d_model, nhead=nhead, num_layers=num_layers
-        )
+        model = cls.build_from_config(model_config)
 
         if checkpoint:
             model.load_state_dict(checkpoint["model"])

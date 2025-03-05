@@ -73,6 +73,7 @@ def trainer(
     resume_checkpoint: Optional[Dict[str, Any]] = None,
     config: Optional[Dict[str, Any]] = None,
     output_dir: Optional[str] = None,
+    scheduler: Optional[Dict[str, Any]] = None,
 ) -> None:
     """
     Train the model with the given dataloaders.
@@ -97,6 +98,8 @@ def trainer(
         Configuration dictionary containing loss weights and other parameters
     output_dir : str, optional
         Directory to save model checkpoints
+    scheduler : dict, optional
+        Scheduler configuration
 
     Returns
     -------
@@ -120,10 +123,10 @@ def trainer(
     lr_scheduler = CosineAnnealingWarmupRestarts(
         optimizer,
         first_cycle_steps=len(dataloader),
-        cycle_mult=1,
-        max_lr=1e-3,
-        min_lr=1e-5,
-        warmup_steps=50,
+        cycle_mult=scheduler["cycle_mult"],
+        max_lr=float(scheduler["max_lr"]),
+        min_lr=float(scheduler["min_lr"]),
+        warmup_steps=scheduler["warmup_steps"],
         gamma=1e-1 ** (1 / num_epochs),
         last_epoch=-1,
     )

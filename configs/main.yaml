@@ -1,15 +1,34 @@
 notes: "This is the main run file for the SkIP model. It uses an transformer based autoencoder to encode and decode the SkIP data. The model is trained using a combination of reconstruction, velocity, and jerk losses.The model is trained on the SkIP dataset."
 config:
-  resume: false
-  resume_from_epoch: 0
-  num_epochs: 60
-  batch_size: 128
+  train:
+    num_epochs: 60
+    batch_size: 128
+    consequtive_frames: 8
+    resume: false
+    resume_from_epoch: 0
+    scheduler:
+      warmup_steps: 0
+      cycle_mult: 1
+      max_lr: 1e-3
+      min_lr: 1e-5
 
   model:
-    d_model: 64
-    d_input: 9
-    nhead: 8
-    num_layers: 4
+    encoder:
+      d_model: 64
+      d_input: 18
+      nhead: 8
+      num_layers: 4
+    decoder:
+      d_model: 64
+      d_input: 6
+      nhead: 8
+      num_layers: 4
+    features:
+      - d6
+      - position
+      - position_prev
+      - velocity
+      - root_trajectory
   
   loss_weights:
     recn_loss: 100

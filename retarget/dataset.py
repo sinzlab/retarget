@@ -23,8 +23,9 @@ class SkIPDataset(Dataset):
         directory: str,
         mode: str = "train",
         ground_feet: bool = False,
-        cons_q: int = 8,
+        consequtive_frames: int = 8,
         augmentors: List[str] = [RestPoseAugmentor(), GlobalSkeletonAugmentor(), XZTranslationAugmentor()],
+        feature_list: List[str] = None,
     ) -> None:
         """
         Initialize the dataset.
@@ -37,15 +38,18 @@ class SkIPDataset(Dataset):
             Dataset mode, either "train" or "test"
         ground_feet : bool, default=False
             Whether to ground the feet of the character
-        cons_q : int, default=8
+        consequtive_frames : int, default=8
             Number of consecutive frames to return as a batch
+        feature_list : List[str], default=None
+            List of features to include in the graph
         """
         super().__init__()
 
         animations: Dict[str, Dict[str, Animation]] = {}
         frame_times: Dict[str, Dict[str, float]] = {}
 
-        self.cons_q = cons_q
+        self.consequtive_frames = consequtive_frames
+        self.feature_list = feature_list
 
         augmentor_name = lambda augmentor: re.sub(r'(?<!^)(?=[A-Z])', '_', augmentor.__class__.__name__).lower()
         self.augmentor = Augmentions(**{
@@ -98,16 +102,16 @@ class SkIPDataset(Dataset):
 
         for animation, time in zip(self.animations, self.frame_time):
             if 1 / time > 100:
-                animation_graphs = animation.as_graph(stride=4)
+                animation_graphs = animation.as_graph(stride=4, feature_list=self.feature_list)
             else:
-                animation_graphs = animation.as_graph()
+                animation_graphs = animation.as_graph(feature_list=self.feature_list)
 
             length_animation = len(animation_graphs)
 
             if length_animation < 8:
                 continue
 
-            n_graphs = length_animation // self.cons_q * self.cons_q
+            n_graphs = length_animation // self.consequtive_frames * self.consequtive_frames
             animation_graphs = animation_graphs[:n_graphs]
 
             total_frames_currently = len(self.data)
@@ -127,7 +131,7 @@ class SkIPDataset(Dataset):
         # print summary for each character
         for character, animations in animations.items():
             print(f"{character}")
-            print(f"    - Animations: {len(animations) // self.cons_q * cons_q}")
+            print(f"    - Animations: {len(animations) // self.consequtive_frames * consequtive_frames}")
         print(f"Total frames: {len(self.data):,}")
         print("===============================")
 
@@ -140,7 +144,7 @@ class SkIPDataset(Dataset):
         int
             Number of samples in the dataset
         """
-        return len(self.data) // self.cons_q
+        return len(self.data) // self.consequtive_frames
 
     def get_one_item(
         self, idx: int
@@ -196,9 +200,9 @@ class SkIPDataset(Dataset):
 
             self.augmentor.reset()
 
-            for i in range(self.cons_q):
+            for i in range(self.consequtive_frames):
                 encoder_item, decoder_item, encoder_item_translated, f_time = (
-                    self.get_one_item(idx * self.cons_q + i)
+                    self.get_one_item(idx * self.consequtive_frames + i)
                 )
                 encoder_items.append(encoder_item)
                 decoder_items.append(decoder_item)
@@ -211,8 +215,8 @@ class SkIPDataset(Dataset):
                 encoder_items_translated,
             )  # , frame_time
 
-        for i in range(self.cons_q):
-            it = self.get_one_item(idx * self.cons_q + i)
+        for i in range(self.consequtive_frames):
+            it = self.get_one_item(idx * self.consequtive_frames + i)
             encoder_items.append(it)
 
         return encoder_items

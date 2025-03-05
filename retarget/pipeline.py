@@ -57,139 +57,45 @@ def load_pretrained_model(
     model.to(device)
     model.eval()
 
-    tokenizer = Tokenizer()
+    tokenizer = Tokenizer(model.feature_list)
+    tokenizer.to(device)
 
     return model, tokenizer
-
-
-def prepare_animation_for_model(animation: Animation, tokenizer: Tokenizer, device: str = "cpu") -> Tuple[Batch, torch.Tensor]:
-    """
-    Prepare an animation for model input by converting to graph and moving to device.
-    
-    Parameters
-    ----------
-    animation: Animation
-        Animation to preprocess
-    tokenizer: Tokenizer
-        Tokenizer for encoding the animation
-    device: str
-        Device to move the data to
-        
-    Returns
-    -------
-    Tuple[Batch, torch.Tensor]
-        Tuple containing the batch and mask tensors
-    """
-    graph_data = animation.as_graph()
-    batch, mask = tokenizer.encode(graph_data)
-
-    # Move data to the appropriate device
-    batch.x = batch.x.to(device)
-    batch.pos = batch.pos.to(device)
-    batch.edge_index = batch.edge_index.to(device)
-    batch.root_trajectory = batch.root_trajectory.to(device)
-    mask = mask.to(device)
-
-    return batch, mask
-
-
-def convert_model_output_to_animation(
-    rotation_pred: torch.Tensor, 
-    trajectory_pred: torch.Tensor, 
-    target_batch: Batch, 
-    target_animation: Animation, 
-    tokenizer: Tokenizer,
-) -> Animation:
-    """
-    Convert model predictions to an Animation object.
-    
-    Parameters
-    ----------
-    rotation_pred: torch.Tensor
-        Predicted rotations in 6D format
-    trajectory_pred: torch.Tensor
-        Predicted root trajectory
-    target_batch: Batch
-        Target batch data
-    target_animation: Animation
-        Target animation for reference
-    tokenizer: Tokenizer
-        Tokenizer for decoding
-    scale_factor: float
-        Scale factor for positions and offsets
-        
-    Returns
-    -------
-    Animation
-        Reconstructed animation
-    """
-    # Move predictions to CPU for processing
-    rotation_pred = rotation_pred.cpu()
-    trajectory_pred = trajectory_pred.cpu()
-
-    # Decode the predictions
-    fk_pose, _ = tokenizer.decode(target_batch, rotation_pred)
-
-    # Convert 6D rotations to quaternions
-    quaternion_rotations = Quaternions(np.stack([d6_2_quat(d6) for d6 in rotation_pred]))
-    
-    # Process positions
-    local_positions = (fk_pose - fk_pose[..., 0:1, :]).detach().numpy()
-    global_positions = local_positions + trajectory_pred.detach().numpy()
-
-    # Create reconstructed animation with proper scaling
-    reconstructed_animation = Animation(
-        quaternion_rotations,
-        global_positions,
-        target_animation.orients,
-        target_animation.offsets,
-        target_animation.parents,
-    )
-
-    return reconstructed_animation
-
 
 def _retarget_animation_with_model(
     model: TransformerAutoEncoder,
     tokenizer: Tokenizer,
     source_animation: Animation,
-    target_animation: Optional[Animation] = None,
-    device: str = "cpu"
+    target_animation: Optional[Animation] = None
 ) -> Animation:
     # If no target animation is provided, use the source animation
     if target_animation is None:
         target_animation = source_animation
 
      # Prepare source and target animations
-    source_batch, source_mask = prepare_animation_for_model(source_animation, tokenizer, device)
-    target_batch, target_mask = prepare_animation_for_model(target_animation, tokenizer, device)
+    src = tokenizer.encode(source_animation)
+    tgt = tokenizer.encode(target_animation)
 
     with torch.inference_mode():
         # Encode the source animation into the latent space
         pose_latent, trajectory_latent = model.encoder(
-            x=source_batch.x, 
-            rest_pose=source_batch.pos, 
-            edge_index=source_batch.edge_index, 
-            mask=source_mask
+            x=src.batch.x,
+            rest_pose=src.rest_pose.positions, 
+            edge_index=src.batch.edge_index, 
+            mask=src.mask
         )
 
         # Decode the latent space to the target skeleton
         rotation_pred, trajectory_pred = model.decoder(
             pose_latent=pose_latent, 
             root_traj_latent=trajectory_latent, 
-            rest_pose=target_batch.pos, 
-            edge_index=target_batch.edge_index, 
-            mask=target_mask
+            rest_pose=tgt.rest_pose.positions, 
+            edge_index=tgt.batch.edge_index, 
+            mask=tgt.mask
         )
 
     # Convert model output to animation
-    retargeted_animation = convert_model_output_to_animation(
-        rotation_pred, 
-        trajectory_pred, 
-        target_batch, 
-        target_animation, 
-        tokenizer
-    )
+    retargeted_animation = tokenizer.decode(tgt.batch, rotation_pred, trajectory_pred, tgt.rest_pose)
 
     return retargeted_animation
 
@@ -225,8 +131,7 @@ def retarget_animation(
         model,
         tokenizer,
         source_animation,
-        target_animation,
-        device
+        target_animation
     )
 
     return retargeted_animation
@@ -257,15 +162,15 @@ def encode_animation(
     model, tokenizer = load_pretrained_model(model_name, device)
 
     # Prepare source and target animations
-    source_batch, source_mask = prepare_animation_for_model(animation, tokenizer, device)
+    source_animation = tokenizer.encode(animation)
 
     with torch.inference_mode():
         # Encode the source animation into the latent space
         pose_latent, trajectory_latent = model.encoder(
-            x=source_batch.x, 
-            rest_pose=source_batch.pos, 
-            edge_index=source_batch.edge_index, 
-            mask=source_mask
+            x=source_animation.batch.x, 
+            rest_pose=source_animation.rest_pose.positions, 
+            edge_index=source_animation.batch.edge_index, 
+            mask=source_animation.mask
         )
 
     return pose_latent, trajectory_latent

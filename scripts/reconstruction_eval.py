@@ -216,8 +216,7 @@ def evaluate_model(
         reconstructed_animation = _retarget_animation_with_model(
             model,
             tokenizer,
-            source_animation,
-            device=device
+            source_animation
         )
         end_time = time.time()
 

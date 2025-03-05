@@ -280,7 +280,7 @@ def evaluate_retargeting(
                 
                 # Perform retargeting
                 retargeted_animation = _retarget_animation_with_model(
-                    model, tokenizer, src_animation, tgt_animation, device
+                    model, tokenizer, src_animation, tgt_animation
                 )
                 
                 # Calculate metrics

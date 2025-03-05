@@ -4,7 +4,7 @@ import numpy as np
 
 import retarget.utils.AnimationStructure as AnimationStructure
 from retarget.model import graph_to_batch, mask_from_batch
-from retarget.utils.Quaternions import Quaternions, d6_2_rotmat
+from retarget.utils.Quaternions import Quaternions, d6_2_rotmat, quat_2_d6
 
 
 class Animation:
@@ -181,8 +181,15 @@ class Animation:
             offsets,
             parents.copy(),
         )
+    
+    def build_feature_vector(self, feature_list, **feature_dict):
+        """
+        Build a feature vector from the animation data.
+        """
+        features_list = [feature_dict[feature_name] for feature_name in feature_list]
+        return torch.cat(features_list, dim=-1)
 
-    def as_graph(self, stride=1):
+    def as_graph(self, stride=1, feature_list=None):
         """
         Convert Animation to Graph Data.
 
@@ -201,6 +208,9 @@ class Animation:
         stride : int
             Stride to sample the animation
 
+        feature_list : list
+            List of features to include in the graph
+
         Returns
         -------
         data : [Data]
@@ -209,13 +219,11 @@ class Animation:
         """
         from torch_geometric.data import Data
 
-        from retarget.utils.Quaternions import quat_2_d6
-
         data = []
 
         for i, (position, rotation) in enumerate(
             zip(self.positions[::stride], self.rotations[::stride])
-        ):
+        ):  
             d6 = quat_2_d6(rotation)
 
             position = torch.Tensor(position)
@@ -244,9 +252,19 @@ class Animation:
             parents = torch.LongTensor(self.parents)
             edges = torch.LongTensor(self.edges.T)
 
-            features = torch.cat(
-                [d6, position, position_prev, velocity, root_trajectory], dim=-1
-            )
+
+            default_feature_list = [
+                "d6",               # 6D rotation representation
+                "position",         # Joint positions
+                "position_prev",    # Previous joint positions
+                "velocity",         # Joint velocities
+                "root_trajectory"   # Root joint trajectory
+            ]
+
+            if feature_list is None:
+                feature_list = default_feature_list
+
+            features = self.build_feature_vector(feature_list, d6=d6, position=position, position_prev=position_prev, velocity=velocity, root_trajectory=root_trajectory)
 
             data.append(
                 Data(

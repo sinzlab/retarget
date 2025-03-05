@@ -67,14 +67,7 @@ def main(
     os.makedirs(output_dir, exist_ok=True)
 
     # training parameters
-    resume = config["resume"]
-
-    # model parameters
-    batch_size = config["batch_size"]
-    d_model = config["model"]["d_model"]
-    d_input = config["model"]["d_input"]
-    nhead = config["model"]["nhead"]
-    num_layers = config["model"]["num_layers"]
+    resume = config["train"]["resume"]
 
     if deactivate_wandb:
         wandb.init("disabled")
@@ -93,6 +86,17 @@ def main(
 
     wandb.save(output_dir + "/model_config.json")
 
+
+    # Model
+    if resume:
+        checkpoint = torch.load(resume, map_location="cpu")
+        model = TransformerAutoEncoder.from_pretrained(
+            checkpoint, checkpoint=checkpoint, model_config=config["model"]
+        )
+    else:
+        model = TransformerAutoEncoder.build_from_config(model_config=config["model"])
+
+
     # get augmentors
     augmentors = get_augmentors(config)
 
@@ -101,41 +105,41 @@ def main(
         directory=config["dataset"]["path"] + "/" + config["dataset"]["train_dir"],
         mode="train",
         augmentors=augmentors,
+        consequtive_frames=config["train"]["consequtive_frames"],
+        feature_list=model.feature_list,
     )
     test_data = SkIPDataset(
         directory=config["dataset"]["path"] + "/" + config["dataset"]["test_dir"],
         mode="test",
         augmentors=augmentors,
+        consequtive_frames=config["train"]["consequtive_frames"],
+        feature_list=model.feature_list,
     )
     train_dataloader = DataLoader(
-        train_data, batch_size=batch_size, shuffle=True, collate_fn=collate_fn
+        train_data,
+        batch_size=config["train"]["batch_size"],
+        shuffle=True,
+        collate_fn=collate_fn,
     )
     test_dataloader = DataLoader(
-        test_data, batch_size=batch_size, collate_fn=collate_fn
+        test_data,
+        batch_size=config["train"]["batch_size"],
+        shuffle=False,
+        collate_fn=collate_fn,
     )
-
-    # Model
-    if resume:
-        checkpoint = torch.load(resume, map_location="cpu")
-        model = TransformerAutoEncoder.from_pretrained(
-            checkpoint, checkpoint=checkpoint
-        )
-    else:
-        model = TransformerAutoEncoder(
-            d_input=d_input, d_model=d_model, nhead=nhead, num_layers=num_layers
-        )
 
     # Training loop
     trainer(
         model,
         train_dataloader,
         test_dataloader,
-        num_epochs=config["num_epochs"],
-        resume_from_epoch=config["resume_from_epoch"],
-        resume_checkpoint=config["resume"],
+        num_epochs=config["train"]["num_epochs"],
+        resume_from_epoch=config["train"]["resume_from_epoch"],
+        resume_checkpoint=config["train"]["resume"],
         config=config,
         output_dir=output_dir,
         device=device,
+        scheduler=config["train"]["scheduler"],
     )
 
     # Save model

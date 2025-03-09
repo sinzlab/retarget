@@ -441,16 +441,22 @@ def distances(anim):
     return distances
 
 
-def detect_contacts(pose: np.ndarray) -> np.ndarray:
+def detect_contacts(pose: np.ndarray, threshold: float = 2 / 170) -> np.ndarray:
     """Detect if the joints are in contact with the ground.
     
     Args:
         pose: Array of shape (T, J, 3) containing the pose of the skeleton
+        threshold: Threshold for the contact detection (default: 2cm)
 
     Returns:
         Array of shape (T,J) containing the contact status for each frame and joint
     """
-    contacts = pose[:, :, 1] < 2 / 170
+    pose = pose.clone()
+    lowest = pose[:, :, 1].min(1)
+    ground_level = np.percentile(lowest, 5)
+    pose[..., 1] -= ground_level
+    # check if the y-coordinate is less than 2mm
+    contacts = pose[:, :, 1] < threshold
 
     # check if the velocity is close to zero
     velocity = np.diff(pose, axis=0, append=np.zeros_like(pose[[-1]]))

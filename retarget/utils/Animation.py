@@ -29,7 +29,7 @@ class Animation:
         parents   : (J) ndarray        | Joint Parents
     """
 
-    def __init__(self, rotations, positions, orients, offsets, parents):
+    def __init__(self, rotations, positions, orients, offsets, parents, ground_feet=False):
 
         self.rotations = rotations
         self.positions = positions
@@ -41,11 +41,12 @@ class Animation:
             self.parents, self.offsets, self.rotations, self.positions[:, 0]
         )
 
-        # Use percentile-based approach to find the ground level
-        # Lower percentile helps filter out noise and find the actual ground level
-        lowest = self.positions[:, :, 1].min(1)
-        ground_level = np.percentile(lowest, 5)
-        self.positions[..., 1] -= ground_level
+        if ground_feet:
+            # Use percentile-based approach to find the ground level
+            # Lower percentile helps filter out noise and find the actual ground level
+            lowest = self.positions[:, :, 1].min(1)
+            ground_level = np.percentile(lowest, 5)
+            self.positions[..., 1] -= ground_level
 
         self.edges = AnimationStructure.edges(self.parents)
         self.rest_pose = AnimationStructure.rest_pose(self.offsets, self.edges)

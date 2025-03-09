@@ -7,6 +7,7 @@ sys.path.append("motion_utils")
 
 from retarget.utils.Animation import Animation
 from retarget.utils.Quaternions import Quaternions
+from retarget.utils.AnimationStructure import detect_contacts
 
 channelmap = {"Xrotation": "x", "Yrotation": "y", "Zrotation": "z"}
 
@@ -278,6 +279,7 @@ def load(filename, start=None, end=None, order=None, world=False, ground_feet=Fa
 
     # magintude should be 10
     factor = 10 / magnitude
+
     offsets *= factor
     positions *= factor
 
@@ -287,7 +289,7 @@ def load(filename, start=None, end=None, order=None, world=False, ground_feet=Fa
     rotations = Quaternions.from_euler(np.radians(rotations), order=order, world=world)
 
     return (
-        Animation(rotations, positions, orients, offsets, parents),
+        Animation(rotations, positions, orients, offsets, parents, ground_feet=ground_feet),
         new_names,
         (frametime, order, world),
     )

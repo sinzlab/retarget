@@ -441,6 +441,36 @@ def distances(anim):
     return distances
 
 
+def detect_contacts(pose: np.ndarray) -> np.ndarray:
+    """Detect if the joints are in contact with the ground.
+    
+    Args:
+        pose: Array of shape (T, J, 3) containing the pose of the skeleton
+
+    Returns:
+        Array of shape (T,J) containing the contact status for each frame and joint
+    """
+    contacts = pose[:, :, 1] < 2 / 170
+
+    # check if the velocity is close to zero
+    velocity = np.diff(pose, axis=0, append=np.zeros_like(pose[[-1]]))
+    velocity = np.linalg.norm(velocity, axis=-1)
+    contacts = contacts & (velocity < 0.15)
+    
+    # Apply temporal smoothing using a sliding window
+    window_size = 10
+    kernel = np.ones(window_size) / window_size
+    
+    # Smooth each joint's contacts separately
+    smoothed_contacts = np.zeros_like(contacts)
+    for j in range(contacts.shape[1]):
+        # Convolve with mode='same' to maintain array size
+        smoothed = np.convolve(contacts[:, j].astype(float), kernel, mode='same')
+        # Convert back to boolean with threshold of 0.1
+        smoothed_contacts[:, j] = smoothed > 0.05
+    
+    return smoothed_contacts
+
 def edges(parents):
     """
     Animation structure edges
@@ -497,7 +527,7 @@ def incidence(parents):
     return inc.T
 
 
-def rest_pose(offsets, edges):
+def rest_pose(offsets, edges, offset_root=False):
     """
     Build the rest pose from the offsets and edge_index.
     
@@ -514,6 +544,10 @@ def rest_pose(offsets, edges):
         Rest pose positions
     """
     rest_pose = np.zeros_like(offsets)
+
+    if offset_root:
+        rest_pose += offsets[0]
+
     for edge in edges:
         rest_pose[edge[1]] = rest_pose[edge[0]] + offsets[edge[1]]
     return rest_pose

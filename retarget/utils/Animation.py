@@ -1,5 +1,5 @@
 import operator
-
+from typing import List
 import numpy as np
 
 import retarget.utils.AnimationStructure as AnimationStructure
@@ -29,7 +29,7 @@ class Animation:
         parents   : (J) ndarray        | Joint Parents
     """
 
-    def __init__(self, rotations, positions, orients, offsets, parents, ground_feet=False):
+    def __init__(self, rotations, positions, orients, offsets, parents, ground_feet=False, recompute_positions=True):
 
         self.rotations = rotations
         self.positions = positions
@@ -37,9 +37,10 @@ class Animation:
         self.offsets = offsets
         self.parents = parents
 
-        self.positions = forward_rotations(
-            self.parents, self.offsets, self.rotations, self.positions[:, 0]
-        )
+        if recompute_positions:
+            self.positions = forward_rotations(
+                self.parents, self.offsets, self.rotations, self.positions[:, 0]
+            )
 
         if ground_feet:
             # Use percentile-based approach to find the ground level
@@ -51,6 +52,35 @@ class Animation:
         self.edges = AnimationStructure.edges(self.parents)
         self.rest_pose = AnimationStructure.rest_pose(self.offsets, self.edges)
         self.contacts = AnimationStructure.detect_contacts(self.positions)
+
+    def split(self, stride: int = 1, consequtive_frames: int = 8) -> List["Animation"]:
+        """
+        Split the animation into multiple sequences of consecutive frames.
+        
+        Parameters
+        ----------
+        stride : int, optional
+            Step size between frames to use. Default is 1.
+        consequtive_frames : int, optional
+            Number of consecutive frames in each sequence. Default is 8.
+            
+        Returns
+        -------
+        generator
+            Generator yielding Animation objects, each containing a sequence of consecutive frames.
+        """
+        n_frames = self.rotations.shape[0]
+        n_joints = self.rotations.shape[1]
+        n_sequences = n_frames // consequtive_frames
+
+        rotations = Quaternions(self.rotations.qs[::stride][:n_sequences * consequtive_frames].reshape(n_sequences, consequtive_frames, n_joints, -1)) 
+        positions = self.positions[::stride][:n_sequences * consequtive_frames].reshape(n_sequences, consequtive_frames, n_joints, -1)
+
+        animations = []
+        for i in range(n_sequences):
+            animations.append(self.__class__(rotations[i], positions[i], self.orients, self.offsets, self.parents, recompute_positions=False))
+
+        return animations
 
     def __op__(self, op, other):
         return Animation(
@@ -190,7 +220,8 @@ class Animation:
             parents.copy(),
         )
     
-    def build_feature_vector(self, feature_list, **feature_dict):
+    @staticmethod
+    def build_feature_vector(feature_list, **feature_dict):
         """
         Build a feature vector from the animation data.
         """
@@ -784,10 +815,11 @@ def forward_rotations_torch(edges, offset, rotations, trajectory=None, device="c
     output: positions [T, J, 3]
     """
 
-    rotations = rotations / torch.norm(rotations, dim=-1, keepdim=True)
+    # rotations = rotations / torch.norm(rotations, dim=-1, keepdim=True)
 
-    transforms = transform_from_quaternion(rotations)  # [..., J, 3, 3]
-    result = torch.zeros(rotations.shape[:-1] + (3,), device=device)
+    # transforms = transform_from_quaternion(rotations)  # [..., J, 3, 3]
+    transforms = rotations.clone()
+    result = torch.zeros(rotations.shape[:-2] + (3,), device=device)
 
     topology = [-1] * (len(edges) + 1)
     for i, edge in enumerate(edges):

@@ -1,222 +1,149 @@
 import re
 from pathlib import Path
-from typing import Dict, List, Tuple, Union
+from typing import Dict, List, Tuple, Union, Optional
 
 from torch_geometric.data import Data, Dataset
 
 from retarget.augment import (Augmentions, GlobalSkeletonAugmentor,
-                              RestPoseAugmentor, XZTranslationAugmentor)
-from retarget.utils.Animation import Animation
+                              RestPoseAugmentor, XZTranslationAugmentor, augment_global_skeleton, augment_rest_pose, augment_root_trajectory)
+from retarget.utils.Animation import Animation, quat_2_d6
 from retarget.utils.BVH import load
+from retarget.types import AnimationData
+from retarget.tokenizer import TokenizerNew
 
+import torch
+import numpy as np
 
-class SkIPDataset(Dataset):
+class RestPoseRegistry:
+    def __init__(self):
+        self.rest_pose_registry = []
+
+    def add(self, rest_pose: Data):
+        # check if rest_pose is already in the registry
+        if rest_pose in self.rest_pose_registry:
+            return
+            
+        # check if rest_pose is similar to any of the rest_poses in the registry
+        for rest_pose_in_registry in self.rest_pose_registry:
+            if self.is_similar(rest_pose, rest_pose_in_registry):
+                return
+        
+        self.rest_pose_registry.append(rest_pose)
+
+    def sample(self) -> Data:
+        return self.rest_pose_registry[np.random.randint(0, len(self.rest_pose_registry))]
+    
+    def is_similar(self, rest_pose_a: Data, rest_pose_b: Data) -> bool:
+        # check if the rest poses are similar
+        same_shape = rest_pose_a.x.shape == rest_pose_b.x.shape
+        if not same_shape:
+            return False
+
+        same_values = np.allclose(rest_pose_a.x, rest_pose_b.x)
+        return same_values
+    
+    def __len__(self) -> int:
+        return len(self.rest_pose_registry)
+
+class SkiPDataset(Dataset):
     """
     Dataset class for loading and processing animations.
-
-    This dataset loads BVH animation files from a directory structure organized by character,
-    converts them to graph representations, and provides methods to access and augment the data.
     """
-
     def __init__(
-        self,
-        directory: str,
-        mode: str = "train",
-        ground_feet: bool = False,
-        consequtive_frames: int = 8,
-        augmentors: List[str] = [RestPoseAugmentor(), GlobalSkeletonAugmentor(), XZTranslationAugmentor()],
-        feature_list: List[str] = None,
-    ) -> None:
-        """
-        Initialize the dataset.
-
-        Parameters
-        ----------
-        directory : str
-            Path to the directory containing the animation files organized by character
-        mode : str, default="train"
-            Dataset mode, either "train" or "test"
-        ground_feet : bool, default=False
-            Whether to ground the feet of the character
-        consequtive_frames : int, default=8
-            Number of consecutive frames to return as a batch
-        feature_list : List[str], default=None
-            List of features to include in the graph
-        """
+            self,
+            directory: str,
+            mode: str = "train",
+            ground_feet: bool = False,
+            consequtive_frames: int = 8,
+            augmentors: List[dict] = [
+                {
+                    "name": "augment_rest_pose",
+                    "max_large_angle": 10,
+                    "max_small_angle": 10,
+                    "probability": 0.25
+                },
+                {
+                    "name": "augment_global_skeleton",
+                    "max_scale": 1.1,
+                    "min_scale": 0.9,
+                    "probability": 0.5
+                },
+                {
+                    "name": "augment_root_trajectory",
+                    "max_translation": 10,
+                    "probability": 1
+                }
+            ],
+            tokenizer: Optional[TokenizerNew] = None
+            ) -> None:
         super().__init__()
 
-        animations: Dict[str, Dict[str, Animation]] = {}
-        frame_times: Dict[str, Dict[str, float]] = {}
-
         self.consequtive_frames = consequtive_frames
-        self.feature_list = feature_list
 
-        augmentor_name = lambda augmentor: re.sub(r'(?<!^)(?=[A-Z])', '_', augmentor.__class__.__name__).lower()
-        self.augmentor = Augmentions(**{
-            augmentor_name(augmentor): augmentor for augmentor in augmentors
-        })
+        self.augmentors = augmentors
 
         characters = list(Path(directory).glob("*"))
 
         self.ground_feet = ground_feet
         self.mode = mode
-        stride = 1 if mode == "train" else 64
+
+        self.rest_pose_registry = RestPoseRegistry()
+
+        self.data: List[AnimationData] = []
+        self.characters = []
+
+        if tokenizer is None:
+            self.tokenizer = TokenizerNew()
+        else:
+            self.tokenizer = tokenizer
 
         for character in characters:
-            animations[character.name] = {}
-            frame_times[character.name] = {}
             actions = list(character.glob("*.bvh"))
 
             for action in actions:
                 try:
-                    (
-                        animations[character.name][action.name],
-                        _,
-                        (frame_times[character.name][action.name], _, _),
-                    ) = load(action, ground_feet=ground_feet)
+                    animation, _, (frame_time, _, _) = load(action, ground_feet=ground_feet)
+                    data_items, rest_pose = self.process_animation(animation, frame_time)
+                    self.data.extend(data_items)
+                    self.characters += [character.name] * len(data_items)
+                    self.rest_pose_registry.add(rest_pose)
+
                 except Exception as e:
                     print(f"Error loading {character.name}/{action.name}: {e}")
 
-            animations[character.name] = list(animations[character.name].values())
-            frame_times[character.name] = list(frame_times[character.name].values())
 
-        self.animations: List[Animation] = list(animations.values())
-        self.frame_times: List[List[float]] = list(frame_times.values())
-        # flatten the lists
-        self.animations = [
-            animation for character in self.animations for animation in character
-        ]
-        self.frame_time: List[float] = [
-            frame_time for character in self.frame_times for frame_time in character
-        ]
-        # Create Empty list to fill with frames as graph
-        self.data: List[Data] = []
-        self.data_idx: List[int] = []
+    def process_animation(self, animation: Animation, frame_time: float) -> List[AnimationData]:
+        if 1 / frame_time > 100:
+            stride = 4
+        else:
+            stride = 1
 
-        # Initialize empty list to put in the previous frames of a given frame
-        # This is used for the velocity loss
-        # Also Initialize empty list with frame times between frames
-        # self.data_prev[idx] stores the offset frame from the original frame.
-        # if mode == "train":
-        # self.time = []
+        animations = animation.split(stride=stride, consequtive_frames=self.consequtive_frames)
 
-        for animation, time in zip(self.animations, self.frame_time):
-            if 1 / time > 100:
-                animation_graphs = animation.as_graph(stride=4, feature_list=self.feature_list)
-            else:
-                animation_graphs = animation.as_graph(feature_list=self.feature_list)
+        data_items = []
+        for anim in animations:
+            encoded_item = self.tokenizer.encode(anim, frame_time=frame_time)
+            data_items.append(encoded_item.motion)
 
-            length_animation = len(animation_graphs)
-
-            if length_animation < 8:
-                continue
-
-            n_graphs = length_animation // self.consequtive_frames * self.consequtive_frames
-            animation_graphs = animation_graphs[:n_graphs]
-
-            total_frames_currently = len(self.data)
-
-            self.data = self.data + animation_graphs
-            self.data_idx += list(
-                range(total_frames_currently, total_frames_currently + n_graphs)
-            )
-
-            # if self.mode == "train":
-            #    self.time = self.time + [time] * n_graphs
-
-        print("=== Dataset Summary ===")
-        print(
-            f"Loaded {len(self.animations)} animation clips for {len(animations)} characters"
-        )
-        # print summary for each character
-        for character, animations in animations.items():
-            print(f"{character}")
-            print(f"    - Animations: {len(animations) // self.consequtive_frames * consequtive_frames}")
-        print(f"Total frames: {len(self.data):,}")
-        print("===============================")
+        return data_items, encoded_item.rest_pose
 
     def __len__(self) -> int:
-        """
-        Get the length of the dataset.
+        return len(self.data)
 
-        Returns
-        -------
-        int
-            Number of samples in the dataset
-        """
-        return len(self.data) // self.consequtive_frames
-
-    def get_one_item(
-        self, idx: int
-    ) -> Union[Data, Tuple[Data, Data, Data, float]]:
-        """
-        Get a single item from the dataset.
-
-        Parameters
-        ----------
-        idx : int
-            Index of the item to retrieve
-        augmentor : Optional[Augmentor], default=None
-            Augmentor to apply to the item if in train mode
-
-        Returns
-        -------
-        Union[Data, Tuple[Data, Data, Data, float]]
-            If in train mode, returns (encoder_item, decoder_item, encoder_item_translated, frame_time)
-            Otherwise, returns the item
-        """
-        item = self.data[self.data_idx[idx]].clone()
+    def __getitem__(self, idx: int) -> AnimationData:
+        motion = self.data[idx]
+        character = self.characters[idx]
+        # sample a random skeleton from the registry
+        target_rest_pose = self.rest_pose_registry.sample()
+        source_rest_pose = motion.rest_pose
 
         if self.mode == "train":
-            # If the mode is "train", then also define the frame time
-            frame_time = 1 / 30  # self.time[idx]
+            for augmentor in self.augmentors:
+                if augmentor["name"] == "augment_global_skeleton":
+                    motion = augment_global_skeleton(motion, augmentor["max_scale"], augmentor["min_scale"], augmentor["probability"])
+                elif augmentor["name"] == "augment_rest_pose":
+                    motion = augment_rest_pose(motion, augmentor["max_large_angle"], augmentor["max_small_angle"], augmentor["probability"])
+                elif augmentor["name"] == "augment_root_trajectory":
+                    motion = augment_root_trajectory(motion, augmentor["max_translation"], augmentor["probability"])
 
-            encoder_item, decoder_item, encoder_item_translated = self.augmentor(item)
-            return encoder_item, decoder_item, encoder_item_translated, frame_time
-        return item
-
-    def __getitem__(
-        self, idx: int
-    ) -> Union[List[Data], Tuple[List[Data], List[Data], List[Data]]]:
-        """
-        Get a batch of consecutive items from the dataset.
-
-        Parameters
-        ----------
-        idx : int
-            Index of the batch to retrieve
-
-        Returns
-        -------
-        Union[List[Data], Tuple[List[Data], List[Data], List[Data]]]
-            If in train mode, returns (encoder_items, decoder_items, encoder_items_translated)
-            Otherwise, returns encoder_items
-        """
-        encoder_items: List[Data] = []
-        if self.mode == "train":
-            frame_time: List[float] = []
-            decoder_items: List[Data] = []
-            encoder_items_translated: List[Data] = []
-
-            self.augmentor.reset()
-
-            for i in range(self.consequtive_frames):
-                encoder_item, decoder_item, encoder_item_translated, f_time = (
-                    self.get_one_item(idx * self.consequtive_frames + i)
-                )
-                encoder_items.append(encoder_item)
-                decoder_items.append(decoder_item)
-                encoder_items_translated.append(encoder_item_translated)
-                frame_time.append(f_time)
-
-            return (
-                encoder_items,
-                decoder_items,
-                encoder_items_translated,
-            )  # , frame_time
-
-        for i in range(self.consequtive_frames):
-            it = self.get_one_item(idx * self.consequtive_frames + i)
-            encoder_items.append(it)
-
-        return encoder_items
+        return motion, source_rest_pose, target_rest_pose

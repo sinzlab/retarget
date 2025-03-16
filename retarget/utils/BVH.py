@@ -280,7 +280,7 @@ def load(filename, start=None, end=None, order=None, world=False, ground_feet=Fa
     std = offsets.std()
     std = np.floor(std) if abs(std) > 0.5 else std
     # get the closest maginute of 10, i.e. 0.1, 1, 10, 100, 1000, ...
-    magnitude = 10 ** np.floor(np.log10(std))
+    magnitude = 10 ** np.round(np.log10(std))
 
     # magintude should be 10
     factor = 10 / magnitude

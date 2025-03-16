@@ -3,11 +3,183 @@ from typing import Any, Dict, List, Optional, Tuple
 import numpy as np
 import torch
 from scipy.spatial.transform import Rotation as R
-from torch_geometric.data import Data
+from torch_geometric.data import Data, Batch
 
 import retarget.utils.AnimationStructure as AnimationStructure
 from retarget.utils.Animation import forward_rotations
 from retarget.utils.Quaternions import Quaternions, d6_2_rotmat, rotmat_2_d6
+from retarget.types import AnimationData, AnimationBatch
+from retarget.model import mask_from_batch, graph_to_batch
+
+from typing import Union
+
+def augment_global_skeleton(item: AnimationData, max_scale: float = 1.1, min_scale: float = 0.9, probability: float = 0.25) -> AnimationData:
+    item_augment = item.clone()
+
+    if np.random.rand() < probability:
+        global_skel_scale = np.random.uniform(min_scale, max_scale)
+    else:
+        global_skel_scale = 1.0
+
+    scaled_offsets = item_augment.rest_pose.offsets.numpy().copy() * global_skel_scale
+
+    rotation = item_augment.rotations.numpy()
+    rotation_prev = item_augment.rotations_prev.numpy()
+    
+    parents = item_augment.rest_pose.parents.numpy()
+    edges = item_augment.rest_pose.edge_index.numpy().T
+
+    position = forward_rotations(
+        parents,
+        scaled_offsets,
+        Quaternions(rotation[None, ...])
+    )[0]
+    position_prev = forward_rotations(
+        parents,
+        scaled_offsets,
+        Quaternions(rotation_prev[None, ...])
+    )[0]
+
+    scaled_rest_pose = AnimationStructure.rest_pose(scaled_offsets, edges)
+
+    item_augment.rest_pose.offsets = torch.Tensor(scaled_offsets)
+    item_augment.rest_pose.positions = torch.Tensor(scaled_rest_pose)
+    item_augment.positions = torch.Tensor(position)
+    item_augment.position_prev = torch.Tensor(position_prev)
+
+    default_feature_list = [
+        "d6",               # 6D rotation representation
+        "position",         # Joint positions
+        "position_prev",    # Previous joint positions
+        "velocity",         # Joint velocities
+        "root_trajectory"   # Root joint trajectory
+    ]
+
+    item_augment.build_feature_vector(default_feature_list, position=item_augment.positions, position_prev=item_augment.position_prev, d6=item_augment.d6, root_trajectory=item_augment.root_trajectory, velocity=item_augment.velocity)
+
+    return item_augment
+
+def augment_rest_pose(item: Union[AnimationData, AnimationBatch], max_large_angle: float = 0, max_small_angle: float = 0, probability: float = 0.5) -> Union[AnimationData, AnimationBatch]:
+    item_augment = item.clone()
+
+    # check if item is a batch
+    if isinstance(item, AnimationBatch):
+        motion_list = item_augment.to_data_list()
+
+        augmented_motion_list = []
+        for motion in motion_list:
+            augmented_motion = _rest_pose_augmentor(motion, max_large_angle, max_small_angle, probability)
+            augmented_motion_list.append(augmented_motion)
+
+        item_augment = AnimationBatch.from_data_list(augmented_motion_list)
+    else:
+        item_augment = _rest_pose_augmentor(item, max_large_angle, max_small_angle, probability)
+
+    return item_augment
+
+def _rest_pose_augmentor(item: AnimationData, max_large_angle: float = 0, max_small_angle: float = 0, probability: float = 0.5) -> AnimationData:
+    item_augment = item.clone()
+
+    num_joints = item_augment.rest_pose.offsets.shape[0]
+
+    if np.random.rand() < probability:
+        small_euler_angles = (
+            np.random.rand(num_joints, 3) * 2 - 1
+        ) * max_small_angle
+    else:
+        small_euler_angles = np.zeros((num_joints, 3))
+
+    if np.random.rand() < probability:
+        large_euler_angles = (
+            np.random.rand(num_joints, 3) * 2 - 1
+        ) * max_large_angle
+    else:
+        large_euler_angles = np.zeros((num_joints, 3))
+
+    large_rotations = R.from_euler(
+        "XYZ", large_euler_angles, degrees=True
+    ).as_matrix()
+    small_rotations = R.from_euler(
+        "XYZ", small_euler_angles, degrees=True
+    ).as_matrix()
+
+    rotations_offset = torch.Tensor(large_rotations @ small_rotations)
+
+    parent_indices = item_augment.rest_pose.edge_index[0]
+    child_indices = item_augment.rest_pose.edge_index[1]
+
+    unique = torch.unique(child_indices).equal(child_indices)
+
+    if unique:
+        item_augment.rest_pose.offsets[child_indices] = (
+            rotations_offset[parent_indices] @ item_augment.rest_pose.offsets[child_indices][..., None]
+        ).squeeze()
+    else:
+        for parent, children in item_augment.rest_pose.edge_index.T:
+            item_augment.rest_pose.offsets[children] = (
+                rotations_offset[parent] @ item_augment.rest_pose.offsets[children][..., None]
+            ).squeeze()
+
+    transform = torch.Tensor(d6_2_rotmat(item_augment.d6))
+    rotations_new = torch.zeros(transform.shape)
+    
+    # Handle the root node (index 0)
+    rotations_new[..., 0, :, :] = transform[..., 0, :, :] @ rotations_offset[0].T
+    # Handle all other nodes in a vectorized way
+    # For each child node, apply the parent's rotation offset, then the original transform, then the child's inverse rotation offset
+    child_indices = torch.arange(1, item_augment.rest_pose.parents.shape[0])
+    parent_indices = item_augment.rest_pose.parents[1:]
+
+    rotations_new[..., child_indices, :, :] = (
+        rotations_offset[parent_indices]
+        @ transform[..., child_indices, :, :]
+        @ rotations_offset[child_indices].transpose(1, 2)
+    )
+
+    item_augment.d6 = torch.Tensor(
+        rotmat_2_d6(rotations_new.reshape(-1, 3, 3))
+    ).reshape(rotations_new.shape[0], rotations_new.shape[1], -1)
+
+    item_augment.rest_pose.positions = torch.Tensor(
+        AnimationStructure.rest_pose(
+            item_augment.rest_pose.offsets.numpy(), item_augment.rest_pose.edge_index.numpy().T
+        )
+    )
+
+    default_feature_list = [
+        "d6",               # 6D rotation representation
+        "position",         # Joint positions
+        "position_prev",    # Previous joint positions
+        "velocity",         # Joint velocities
+        "root_trajectory"   # Root joint trajectory
+    ]
+
+    item_augment.build_feature_vector(default_feature_list, position=item_augment.positions, position_prev=item_augment.position_prev, d6=item_augment.d6, root_trajectory=item_augment.root_trajectory, velocity=item_augment.velocity)
+
+    return item_augment
+
+
+def augment_root_trajectory(item: AnimationData, max_translation: float = 10, probability: float = 1) -> AnimationData:
+    item_augment = item.clone()
+
+    if np.random.rand() < probability:
+        x_translation = torch.rand(1) * max_translation
+        z_translation = torch.rand(1) * max_translation
+
+        item_augment.root_trajectory[..., 0] += x_translation
+        item_augment.root_trajectory[..., 2] += z_translation
+
+    default_feature_list = [
+        "d6",               # 6D rotation representation
+        "position",         # Joint positions
+        "position_prev",    # Previous joint positions
+        "velocity",         # Joint velocities
+        "root_trajectory"   # Root joint trajectory
+    ]
+
+    item_augment.build_feature_vector(default_feature_list, position=item_augment.positions, position_prev=item_augment.position_prev, d6=item_augment.d6, root_trajectory=item_augment.root_trajectory, velocity=item_augment.velocity)
+
+    return item_augment
 
 
 class Augmentor:

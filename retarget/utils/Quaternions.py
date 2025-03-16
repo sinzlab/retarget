@@ -662,7 +662,8 @@ def d6_2_rotmat(d6):
 
     b2 = u2 / u2_clamped
     b3 = torch.cross(b1, b2, dim=-1)
-    rotmat = torch.cat((b1[..., None], b2[..., None], b3[..., None]), dim=-1)
+    # rotmat = torch.cat((b1[..., None], b2[..., None], b3[..., None]), dim=-1)
+    rotmat = torch.stack((b1, b2, b3), dim=-2)
     # rotmat = torch.cat((d6, torch.cross(d6[..., 0:1, :], d6[..., 1:2, :], dim=-1)), dim=-2)
     # rotmat = np.zeros((*d6.shape[:-2], 3, 3))
     # rotmat[..., :2, :] = d6
@@ -727,6 +728,47 @@ def rotmat_2_quat(ts):
 
     return qs
 
+def from_transforms(cls, ts):
+    d0, d1, d2 = ts[...,0,0], ts[...,1,1], ts[...,2,2]
+    
+    q0 = ( d0 + d1 + d2 + 1.0) / 4.0
+    q1 = ( d0 - d1 - d2 + 1.0) / 4.0
+    q2 = (-d0 + d1 - d2 + 1.0) / 4.0
+    q3 = (-d0 - d1 + d2 + 1.0) / 4.0
+    
+    q0 = np.sqrt(q0.clip(0,None))
+    q1 = np.sqrt(q1.clip(0,None))
+    q2 = np.sqrt(q2.clip(0,None))
+    q3 = np.sqrt(q3.clip(0,None))
+    
+    c0 = (q0 >= q1) & (q0 >= q2) & (q0 >= q3)
+    c1 = (q1 >= q0) & (q1 >= q2) & (q1 >= q3)
+    c2 = (q2 >= q0) & (q2 >= q1) & (q2 >= q3)
+    c3 = (q3 >= q0) & (q3 >= q1) & (q3 >= q2)
+    
+    q1[c0] *= np.sign(ts[c0,2,1] - ts[c0,1,2])
+    q2[c0] *= np.sign(ts[c0,0,2] - ts[c0,2,0])
+    q3[c0] *= np.sign(ts[c0,1,0] - ts[c0,0,1])
+    
+    q0[c1] *= np.sign(ts[c1,2,1] - ts[c1,1,2])
+    q2[c1] *= np.sign(ts[c1,1,0] + ts[c1,0,1])
+    q3[c1] *= np.sign(ts[c1,0,2] + ts[c1,2,0])  
+    
+    q0[c2] *= np.sign(ts[c2,0,2] - ts[c2,2,0])
+    q1[c2] *= np.sign(ts[c2,1,0] + ts[c2,0,1])
+    q3[c2] *= np.sign(ts[c2,2,1] + ts[c2,1,2])  
+    
+    q0[c3] *= np.sign(ts[c3,1,0] - ts[c3,0,1])
+    q1[c3] *= np.sign(ts[c3,2,0] + ts[c3,0,2])
+    q2[c3] *= np.sign(ts[c3,2,1] + ts[c3,1,2])  
+    
+    qs = np.empty(ts.shape[:-2] + (4,))
+    qs[...,0] = q0
+    qs[...,1] = q1
+    qs[...,2] = q2
+    qs[...,3] = q3
+    
+    return cls(qs)
 
 def d6_2_quat(d6):
     # Convert 6D representation to quaternion

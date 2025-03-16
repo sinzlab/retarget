@@ -41,7 +41,7 @@ def get_args() -> argparse.Namespace:
     parser.add_argument(
         "--tgt_path", "-t",
         type=str,
-        default=None,
+        default="./data/mixamo/Aj/Baseball Pitching.bvh",
         help="Optional path to target BVH file for retargeting",
     )
     parser.add_argument(
@@ -156,8 +156,22 @@ def main():
 
     # Save reconstructed and ground truth animations
     output_base = os.path.join(args.output_dir, args.src_path.stem)
+
+    height_src = src_animation.rest_pose[:, 1].max()
+    height_tgt = tgt_animation.rest_pose[:, 1].max()
+    height_ratio = height_src / height_tgt
+    print(f"Height ratio: {height_ratio}")
+
+    # recon_anim.positions -= recon_anim.positions[:, :1]
+    # src_animation.positions -= src_animation.positions[:, :1]
+    # tgt_animation.positions -= tgt_animation.positions[:, :1]
+
+    recon_anim.positions[:, 0] = recon_anim.positions[:, 0] * height_ratio
+    recon_anim.positions[:, 0, 1] = recon_anim.positions[:, 0, 1] * height_ratio
+
     save(f"{output_base}_{args.model_name}.bvh", recon_anim, names=target_names)
     save(f"{output_base}_gt.bvh", src_animation, names=source_names)
+    save(f"{output_base}_tgt.bvh", tgt_animation, names=target_names)
 
     print(f"Saved animations to {args.output_dir}")
     # report time taken on the device

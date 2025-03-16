@@ -266,7 +266,7 @@ def evaluate_retargeting(
             if src_char == tgt_char:
                 continue
                 
-            pbar = tqdm(animation_files[:1])
+            pbar = tqdm(animation_files)
             for anim_file in pbar:
                 pbar.set_description(f"{src_char + '->' + tgt_char:>25} | {anim_file:>35}")
                 
@@ -356,9 +356,6 @@ if __name__ == "__main__":
     test_characters = ['Aj', 'BigVegas', 'Kaya', 'SportyGranny', 'Mousey_m', 'Goblin_m', 'Mremireh_m', 'Vampire_m']
     characters_a = test_characters[:4]  # Training set characters
     characters_b = test_characters[4:]  # Test set characters
-
-    characters_a = ['Aj']
-    characters_b = ['Mousey_m']
 
     # Get all animation files from the first character's directory
     animation_files = list((args.data_dir / test_characters[0]).glob('*.bvh'))

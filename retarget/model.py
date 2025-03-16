@@ -41,7 +41,7 @@ class PositionalEncoding(nn.Module):
         super(PositionalEncoding, self).__init__()
         self.gcn = GraphSAGE(3, d_model, num_layers=2)
 
-    def forward(self, x: torch.Tensor, edge_index: torch.Tensor) -> torch.Tensor:
+    def forward(self, rest_pose: Batch) -> torch.Tensor:
         """
         Compute positional encoding for input features.
 
@@ -53,7 +53,8 @@ class PositionalEncoding(nn.Module):
         Returns:
             Positional encoding of shape [num_nodes, d_model]
         """
-        pe = self.gcn(x, edge_index)
+        pe = self.gcn(rest_pose.x, rest_pose.edge_index)
+        pe = graph_to_batch(pe, mask_from_batch(rest_pose))
         return pe
 
 
@@ -107,8 +108,7 @@ class TransformerEncoder(nn.Module):
     def forward(
         self,
         x: torch.Tensor,
-        rest_pose: torch.Tensor,
-        edge_index: torch.Tensor,
+        rest_pose: Batch,
         mask: Optional[torch.Tensor] = None,
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         """
@@ -117,8 +117,7 @@ class TransformerEncoder(nn.Module):
         Parameters
         ----------
         x: Input features [batch_size, max_nodes, d_input]
-        rest_pose: Rest pose positions of shape [num_nodes, 3]
-        edge_index: Graph connectivity [2, num_edges]
+        rest_pose: Rest pose Batch object
         mask: Boolean mask for valid nodes [batch_size, max_nodes]
 
         Returns:
@@ -126,11 +125,19 @@ class TransformerEncoder(nn.Module):
                 - pose latent representation [batch_size, d_model]
                 - root trajectory latent representation [batch_size, d_model]
         """
+        batch_size = x.shape[0]
+        consequtive_frames = x.shape[1]
+        
         src = self.linear(x)
 
-        src = src * self.pos_encoder(rest_pose, edge_index)
+        pe = self.pos_encoder(rest_pose)
 
-        src = graph_to_batch(src, mask)
+        if src.dim() == 4:
+            pe = pe.unsqueeze(1)
+
+        src = src * pe
+
+        src = src.view(-1, src.shape[-2], src.shape[-1])
 
         distribution_tokens = torch.stack(
             [
@@ -140,13 +147,20 @@ class TransformerEncoder(nn.Module):
             dim=1,
         )
 
-        src = torch.cat([distribution_tokens, src], dim=1)
+        tokens = torch.cat([distribution_tokens, src], dim=1)
+        
+        mask = mask.view(-1, mask.shape[-1])
         mask = torch.cat(
             [torch.ones(src.shape[0], 2, dtype=bool, device=src.device), mask], dim=1
         )
 
-        output = self.transformer_encoder(src, src_key_padding_mask=~mask)
-        return output[:, 0], output[:, 1]
+        output = self.transformer_encoder(tokens, src_key_padding_mask=~mask)
+        output = output.view(batch_size, consequtive_frames, output.shape[-2], output.shape[-1])
+
+        pose_latent = output[..., 0, :]
+        root_traj_latent = output[..., 1, :]
+
+        return pose_latent, root_traj_latent
 
 
 class TransformerEncoderDecoder(nn.Module):
@@ -197,8 +211,7 @@ class TransformerEncoderDecoder(nn.Module):
         self,
         pose_latent: torch.Tensor,
         root_traj_latent: torch.Tensor,
-        rest_pose: torch.Tensor,
-        edge_index: torch.Tensor,
+        rest_pose: Batch,
         mask: Optional[torch.Tensor] = None,
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         """
@@ -217,25 +230,36 @@ class TransformerEncoderDecoder(nn.Module):
                 - decoded pose features [batch_size, max_nodes, d_output]
                 - decoded root trajectory [batch_size, max_nodes, 3]
         """
-        src_pose = pose_latent.unsqueeze(1).repeat(1, mask.shape[1], 1)
-        src_root_traj = root_traj_latent.unsqueeze(1)
+        batch_size = pose_latent.shape[0]
+        consequtive_frames = pose_latent.shape[1]
 
-        pe = self.pos_encoder(rest_pose, edge_index)
-        pe = graph_to_batch(pe, mask)
+        pe = self.pos_encoder(rest_pose)
+
+        n_joints = pe.shape[-2]
+
+        src_pose = pose_latent.unsqueeze(-2).repeat(1, 1, n_joints, 1)
+        src_root_traj = root_traj_latent.unsqueeze(-2)
+
+        if src_pose.dim() == 4:
+            pe = pe.unsqueeze(1)
 
         src = src_pose * pe  # multiply by positional encoding
         src_root_traj = src_root_traj + self.src_root_traj_pos_enc
-        
-        src = torch.cat([src, src_root_traj], dim=1)
+
+        tokens = torch.cat([src, src_root_traj], dim=-2)
+        tokens = tokens.view(-1, tokens.shape[-2], tokens.shape[-1])
+        mask = mask.view(-1, mask.shape[-1])
+
         mask = torch.cat(
-            [mask, torch.ones(src.shape[0], 1, dtype=bool, device=src.device)], dim=1
+            [mask, torch.ones(tokens.shape[0], 1, dtype=bool, device=src.device)], dim=1
         )
 
-        output = self.transformer_decoder(src, src_key_padding_mask=~mask)
+        output = self.transformer_decoder(tokens, src_key_padding_mask=~mask)
+        output = output.view(batch_size, consequtive_frames, output.shape[-2], output.shape[-1])
 
         # Project d_model dim to output dim
-        output_pose = self.linear_pose(output[:, :-1, :])
-        output_traj = self.linear_traj(output[:, -1:, :])
+        output_pose = self.linear_pose(output[..., :-1, :])
+        output_traj = self.linear_traj(output[..., -1:, :])
 
         return output_pose, output_traj
 
@@ -301,7 +325,6 @@ class TransformerAutoEncoder(nn.Module):
         self,
         x: torch.Tensor,
         rest_pose: torch.Tensor,
-        edge_index: torch.Tensor,
         rest_pose_decoder: Optional[torch.Tensor] = None,
         mask: Optional[torch.Tensor] = None,
     ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
@@ -312,7 +335,6 @@ class TransformerAutoEncoder(nn.Module):
         ----------
         x: Input features [batch_size, max_nodes, d_input]
         rest_pose: Rest pose positions for encoder [num_nodes, 3]
-        edge_index: Graph connectivity [2, num_edges]
         rest_pose_decoder: Optional different rest pose for decoder
         mask: Boolean mask for valid nodes [batch_size, max_nodes]
 
@@ -323,16 +345,16 @@ class TransformerAutoEncoder(nn.Module):
                 - mean of latent distribution [batch_size, d_model]
                 - log variance of latent distribution [batch_size, d_model]
         """
-        z_pose, z_root_traj = self.encoder(x, rest_pose, edge_index, mask=mask)
+        z_pose, z_root_traj = self.encoder(x, rest_pose, mask=mask)
         mean, log_var = z_pose, None
 
         if rest_pose_decoder is None:
             output_pose, output_traj = self.decoder(
-                z_pose, z_root_traj, rest_pose, edge_index, mask=mask
+                z_pose, z_root_traj, rest_pose, mask=mask
             )
         else:
             output_pose, output_traj = self.decoder(
-                z_pose, z_root_traj, rest_pose_decoder, edge_index, mask=mask
+                z_pose, z_root_traj, rest_pose_decoder, mask=mask
             )
 
         return output_pose, output_traj, mean, log_var

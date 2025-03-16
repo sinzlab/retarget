@@ -29,13 +29,13 @@ def get_args() -> argparse.Namespace:
     parser.add_argument(
         "--model_name", "-m",
         type=str,
-        default="clear-monkey-418",
+        default="floral-sunset-465_2",
         help="Name of the model to load",
     )
     parser.add_argument(
         "--src_path", "-s",
         type=str,
-        default="./data/testing/testing/dataset-2_run_elderly_003.bvh",
+        default="./data/Truebone_Z-OO_repaired/Trex/__run_head_butt_right.bvh",
         help="Path to source BVH file",
     )
     parser.add_argument(
@@ -117,7 +117,7 @@ def format_metrics(metrics: Dict[str, float]) -> str:
     # Combine all parts
     return f"\n{header}\n{separator}\n" + "\n".join(rows) + '\n'
 
-if __name__ == "__main__":
+def main():
     args = get_args()
     device = torch.device(
         args.device if torch.cuda.is_available() and args.device == "cuda" else "cpu"
@@ -125,11 +125,11 @@ if __name__ == "__main__":
 
     print(f"Using device: {device}")
 
-    src_animation, source_names, _ = load(str(args.src_path), ground_feet=False)
+    src_animation, source_names, _ = load(str(args.src_path), ground_feet=False, remove_illegal_joints=False)
     print(f"Loaded source animation with {len(src_animation.rotations)} frames")
 
     if args.tgt_path:
-        tgt_animation, target_names, _ = load(str(args.tgt_path), ground_feet=False)
+        tgt_animation, target_names, _ = load(str(args.tgt_path), ground_feet=False, remove_illegal_joints=False)
         retargetting = True
         print(f"Loaded target animation with {len(tgt_animation.rotations)} frames")
     else:
@@ -163,3 +163,6 @@ if __name__ == "__main__":
     # report time taken on the device
     print(f"Retargeting time: {time_taken:.2g} seconds on {device}")
     print(f"Frames per second: {frames_per_second:.0f}")
+
+if __name__ == "__main__":
+    main()

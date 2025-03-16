@@ -451,7 +451,7 @@ def detect_contacts(pose: np.ndarray, threshold: float = 2 / 170) -> np.ndarray:
     Returns:
         Array of shape (T,J) containing the contact status for each frame and joint
     """
-    pose = pose.clone()
+    pose = pose.copy()
     lowest = pose[:, :, 1].min(1)
     ground_level = np.percentile(lowest, 5)
     pose[..., 1] -= ground_level
@@ -464,7 +464,7 @@ def detect_contacts(pose: np.ndarray, threshold: float = 2 / 170) -> np.ndarray:
     contacts = contacts & (velocity < 0.15)
     
     # Apply temporal smoothing using a sliding window
-    window_size = 10
+    window_size = 5
     kernel = np.ones(window_size) / window_size
     
     # Smooth each joint's contacts separately

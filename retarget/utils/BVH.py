@@ -24,7 +24,7 @@ ordermap = {
 }
 
 
-def load(filename, start=None, end=None, order=None, world=False, ground_feet=False):
+def load(filename, start=None, end=None, order=None, world=False, ground_feet=False, remove_illegal_joints=False):
     """
     Reads a BVH file and constructs an animation
 
@@ -173,104 +173,109 @@ def load(filename, start=None, end=None, order=None, world=False, ground_feet=Fa
 
     f.close()
 
-    legal_names = [
-        "Chest",
-        "Chest2",
-        "Foot_L",
-        "Foot_R",
-        "Hand_L",
-        "Hand_R",
-        "Head",
-        "HeadTop_End",
-        "Hips",
-        "LHipJoint",
-        "LeftAnkle",
-        "LeftArm",
-        "LeftCollar",
-        "LeftDummyShoulder",
-        "LeftElbow",
-        "LeftFoot",
-        "LeftForeArm",
-        "LeftHand",
-        "LeftHip",
-        "LeftHipJoint",
-        "LeftKnee",
-        "LeftLeg",
-        "LeftShoulder",
-        "LeftShoulder_split",
-        "LeftToe",
-        "LeftToeBase",
-        "LeftUpLeg",
-        "LeftWrist",
-        "LowerArm_L",
-        "LowerArm_R",
-        "LowerBack",
-        "LowerLeg_L",
-        "LowerLeg_R",
-        "Neck",
-        "Neck1",
-        "Pelvis",
-        "RHipJoint",
-        "RightAnkle",
-        "RightArm",
-        "RightCollar",
-        "RightDummyShoulder",
-        "RightElbow",
-        "RightFoot",
-        "RightForeArm",
-        "RightHand",
-        "RightHip",
-        "RightHipJoint",
-        "RightKnee",
-        "RightLeg",
-        "RightShoulder",
-        "RightShoulder_split",
-        "RightToe",
-        "RightToeBase",
-        "RightUpLeg",
-        "RightWrist",
-        "Shoulder_L",
-        "Shoulder_R",
-        "Spine",
-        "Spine1",
-        "Spine1_split",
-        "Spine2",
-        "Spine3",
-        "Spine4",
-        "Toes_L",
-        "Toes_R",
-        "UpperArm_L",
-        "UpperArm_R",
-        "UpperLeg_L",
-        "UpperLeg_R",
-        "lhand",
-        "lowerback",
-        "lowerneck",
-        "rhand",
-    ]
+    new_names = names
 
-    # get illegal indexes
-    illegal_indexes = []
-    new_names = []
-    for i, name in enumerate(names):
-        # check if name ends with any of the legal names
-        is_legal = any([name.endswith(legal_name) for legal_name in legal_names])
-        if is_legal:
-            new_names.append(name)
-        if not is_legal:
-            illegal_indexes.append(i)
+    if remove_illegal_joints:
+        legal_names = [
+            "Chest",
+            "Chest2",
+            "Foot_L",
+            "Foot_R",
+            "Hand_L",
+            "Hand_R",
+            "Head",
+            "HeadTop_End",
+            "Hips",
+            "LHipJoint",
+            "LeftAnkle",
+            "LeftArm",
+            "LeftCollar",
+            "LeftDummyShoulder",
+            "LeftElbow",
+            "LeftFoot",
+            "LeftForeArm",
+            "LeftHand",
+            "LeftHip",
+            "LeftHipJoint",
+            "LeftKnee",
+            "LeftLeg",
+            "LeftShoulder",
+            "LeftShoulder_split",
+            "LeftToe",
+            "LeftToeBase",
+            "LeftUpLeg",
+            "LeftWrist",
+            "LowerArm_L",
+            "LowerArm_R",
+            "LowerBack",
+            "LowerLeg_L",
+            "LowerLeg_R",
+            "Neck",
+            "Neck1",
+            "Pelvis",
+            "RHipJoint",
+            "RightAnkle",
+            "RightArm",
+            "RightCollar",
+            "RightDummyShoulder",
+            "RightElbow",
+            "RightFoot",
+            "RightForeArm",
+            "RightHand",
+            "RightHip",
+            "RightHipJoint",
+            "RightKnee",
+            "RightLeg",
+            "RightShoulder",
+            "RightShoulder_split",
+            "RightToe",
+            "RightToeBase",
+            "RightUpLeg",
+            "RightWrist",
+            "Shoulder_L",
+            "Shoulder_R",
+            "Spine",
+            "Spine1",
+            "Spine1_split",
+            "Spine2",
+            "Spine3",
+            "Spine4",
+            "Toes_L",
+            "Toes_R",
+            "UpperArm_L",
+            "UpperArm_R",
+            "UpperLeg_L",
+            "UpperLeg_R",
+            "lhand",
+            "lowerback",
+            "lowerneck",
+            "rhand",
+        ]
 
-    rotations = np.delete(rotations, illegal_indexes, axis=1)
-    positions = np.delete(positions, illegal_indexes, axis=1)
-    orients = np.delete(orients, illegal_indexes, axis=0)
-    offsets = np.delete(offsets, illegal_indexes, axis=0)
-    parents = np.delete(parents, illegal_indexes, axis=0)
+        # get illegal indexes
+        illegal_indexes = []
+        new_names = []
+        for i, name in enumerate(names):
+            # check if name ends with any of the legal names
+            is_legal = any([name.endswith(legal_name) for legal_name in legal_names])
+            if is_legal:
+                new_names.append(name)
+            if not is_legal:
+                illegal_indexes.append(i)
 
-    new_parents = np.zeros_like(parents)
-    for i, parent in enumerate(parents):
-        new_parents[i] = parent - np.sum(np.array(illegal_indexes) < parent)
+        rotations = np.delete(rotations, illegal_indexes, axis=1)
+        positions = np.delete(positions, illegal_indexes, axis=1)
+        orients = np.delete(orients, illegal_indexes, axis=0)
+        offsets = np.delete(offsets, illegal_indexes, axis=0)
+        parents = np.delete(parents, illegal_indexes, axis=0)
 
-    parents = new_parents
+        new_parents = np.zeros_like(parents)
+        for i, parent in enumerate(parents):
+            new_parents[i] = parent - np.sum(np.array(illegal_indexes) < parent)
+
+        parents = new_parents
+    else:
+        orients = np.array(orients)
 
     std = offsets.std()
     std = np.floor(std) if abs(std) > 0.5 else std

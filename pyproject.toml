@@ -10,9 +10,13 @@ dependencies = [
     "torch",
     "torch-geometric",
     "scipy>=1.15.2",
+    "scikit-learn>=1.6.1",
 ]
 readme = "README.md"
 requires-python = ">= 3.8"
+
+[project.scripts]
+main = "scripts.run:main"
 
 [build-system]
 requires = ["hatchling"]
@@ -26,6 +30,7 @@ dev-dependencies = [
     "pytest>=8.3.5",
     "pytest-profiling>=1.8.1",
     "isort>=6.0.1",
+    "jupyter>=1.1.1",
 ]
 
 [tool.hatch.metadata]

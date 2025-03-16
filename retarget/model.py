@@ -224,7 +224,7 @@ class TransformerEncoderDecoder(nn.Module):
         pe = graph_to_batch(pe, mask)
 
         src = src_pose * pe  # multiply by positional encoding
-        src_root_traj = src_root_traj * self.src_root_traj_pos_enc
+        src_root_traj = src_root_traj + self.src_root_traj_pos_enc
         
         src = torch.cat([src, src_root_traj], dim=1)
         mask = torch.cat(
@@ -369,8 +369,8 @@ class TransformerAutoEncoder(nn.Module):
             Initialized model
         """
         default_config = {
-            "encoder": {"d_model": 64, "d_input": 18, "nhead": 8, "num_layers": 4},
-            "decoder": {"d_model": 64, "d_input": 6, "nhead": 8, "num_layers": 4},
+            "encoder": {"d_model": 128, "d_input": 18, "nhead": 8, "num_layers": 4},
+            "decoder": {"d_model": 128, "d_input": 6, "nhead": 8, "num_layers": 4},
             "feature_list": ["d6", "position", "position_prev", "velocity", "root_trajectory"],
         }
 

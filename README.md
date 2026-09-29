@@ -6,7 +6,9 @@
 
 ---
 
-Welcome to **SkIP**, a framework for abstracting skeletal topology into a shared latent space. With SkIP, you can retarget and reconstruct animations regardless of the underlying skeleton structure.
+Official code release for **"Retargeting Motions to Diverse Skeletons via Learnable Flattening"**. This repository trains and evaluates a **Transformer Autoencoder** that transfers motion between characters with different skeletal topologies — including topologies never seen during training — using a single unified model, with no paired retargeting data.
+
+Additionally, this repository serves as a framework for abstracting skeletal topology into a shared latent space, with which, you can retarget and reconstruct animations regardless of the underlying skeleton structure.
 
 ---
 ## Table of Contents
@@ -27,13 +29,13 @@ Welcome to **SkIP**, a framework for abstracting skeletal topology into a shared
 
 ## Overview 🚀
 
-Skeleton Invariant Pose Embedding (SkIP) abstracts complex skeletal animations into a compact latent representation. By employing a **graph embedding** approach, it encodes the relationships between keypoints and decodes them back into their original form. This flexibility enables the training of diffusion models on varied skeleton topologies and generates animations that maintain motion fidelity.
+This repository provides a **Transformer Autoencoder** for motion retargeting across diverse skeletal topologies. The model encodes skeletal motion into a fixed-dimensional latent space using a **learnable flattening** of the skeletal graph with **multiplicative graph-based positional encodings**, enabling retargeting to skeletons unseen during training. The model trains fully unsupervised, requiring no paired retargeting data.
 
 ---
 
 ## Installation 🔧
 
-Install SkIP in editable mode with pip:
+Install in editable mode with pip:
 
 ```bash
 pip install -e .

@@ -1,4 +1,4 @@
-# Skeleton Invariant Pose Embedding (SkIP) 🤸‍♂️
+# Retargeting Motions to Diverse Skeletons via Learnable Flattening 🤸‍♂️
 
 [![Build Status](https://img.shields.io/badge/build-passing-brightgreen)](https://example.com)
 [![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
